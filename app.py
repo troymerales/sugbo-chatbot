@@ -8,38 +8,43 @@ Flow:
   1. Greets the user, waits for a question.
   2. Answers with Gemini (using the docs), then asks "Did that help?" after every answer.
   3. "Yes"  -> conversation resolved.
-     "No"   -> keep chatting.
-  4. Once the user has asked 3 questions without resolution, it offers to file
-     a support ticket ("this is taking a while to solve...").
-  5. If the user accepts, the conversation is summarized into a ticket and
-     appended to tickets.csv.
+     "No"   -> submit a ticket, or tell me more.
+  4. Once the user has asked 3 questions without resolution, it proactively offers
+     to file a ticket ("this is taking a while to solve...").
+  5. If the user accepts, a modal collects email / subject / summary (pre-filled
+     with an AI draft) and creates a Jira issue via the REST API.
 
 Run:
     pip install -r requirements.txt
-    # provide a key one of these ways:
-    #   - .streamlit/secrets.toml  ->  GEMINI_API_KEY = "..."
-    #   - environment variable     ->  set GEMINI_API_KEY=...
-    #   - paste it into the sidebar
+    # copy .env.example -> .env and fill in GEMINI_API_KEY + the JIRA_* vars
     streamlit run app.py
 """
 
 from __future__ import annotations
 
-import csv
 import os
-from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+from jira_client import (
+    JIRA_ISSUE_TYPE,
+    JIRA_PROJECT_KEY,
+    browse_url,
+    create_issue,
+    jira_configured,
+)
+
+load_dotenv(override=True)  # read .env into os.environ
 
 # --------------------------------------------------------------------------- #
 # Config
 # --------------------------------------------------------------------------- #
 
-MODEL = "gemini-2.5-flash"          # or "gemini-2.0-flash", "gemini-2.5-pro"
-TICKETS_CSV = Path("tickets.csv")
+MODEL = "gemini-3.6-flash"          # or "gemini-2.0-flash", "gemini-2.5-pro"
 DOCS_PATH = Path("SugboDoc-Documentation.md")
 QUESTIONS_BEFORE_TICKET = 3
 
@@ -52,6 +57,8 @@ heading. If the answer is not in the documentation, say plainly that you don't
 have that information in your records rather than guessing.
 """
 
+GREETING = "Hi! I'm the SugboDoc support assistant. What can I help you with today?"
+
 
 def build_system_prompt() -> str:
     try:
@@ -60,25 +67,19 @@ def build_system_prompt() -> str:
         return PERSONA + "\n\n(Note: documentation file not found.)"
     return f"{PERSONA}\n\n===== SUGBODOC DOCUMENTATION =====\n\n{docs}\n\n===== END DOCUMENTATION ====="
 
-GREETING = "Hi! I'm the SugboDoc support assistant. What can I help you with today?"
-
 
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
 
 def get_api_key() -> str | None:
-    """Look for the key in secrets, then env, then the sidebar input."""
+    """Gemini key: secrets, then env."""
     try:
         if "GEMINI_API_KEY" in st.secrets:
             return st.secrets["GEMINI_API_KEY"]
     except Exception:
         pass
-    return (
-        os.environ.get("GEMINI_API_KEY")
-        or os.environ.get("GOOGLE_API_KEY")
-        or st.session_state.get("api_key_input")
-    )
+    return os.environ.get("GEMINI_API_KEY")
 
 
 @st.cache_resource(show_spinner=False)
@@ -115,21 +116,25 @@ def answer_user(text: str) -> None:
     except Exception as exc:  # noqa: BLE001 - surface any API error to the user
         reply = f"Sorry, something went wrong contacting Gemini:\n\n`{exc}`"
     st.session_state.messages.append({"role": "assistant", "content": reply})
-    st.session_state.stage = "feedback"
+    st.session_state.stage = (
+        "offer_ticket"
+        if st.session_state.question_count >= QUESTIONS_BEFORE_TICKET
+        else "feedback"
+    )
 
 
-def generate_ticket(client: genai.Client) -> tuple[str, str, str]:
-    """Summarize the conversation into (subject, category, description)."""
+def draft_ticket(client: genai.Client) -> tuple[str, str, str]:
+    """AI draft used to pre-fill the ticket form: (subject, category, summary)."""
     prompt = (
-        "Summarize the following support conversation into a ticket.\n"
+        "Draft a support ticket from this conversation.\n"
         "Reply in EXACTLY this format, nothing else:\n"
         "Subject: <one short line>\n"
         "Category: <one of: Scheduling, Patients, Clinical, Billing, "
         "Immunization, Staff/Admin, Account, Other>\n"
-        "Description: <2-4 sentences: the problem and what was already tried>\n\n"
+        "Summary: <2-4 sentences: the problem and what was already tried>\n\n"
         "Conversation:\n" + transcript_text()
     )
-    subject, category, description = "Support request", "Other", ""
+    subject, category, summary = "", "Other", ""
     try:
         text = client.models.generate_content(model=MODEL, contents=prompt).text or ""
     except Exception:  # noqa: BLE001
@@ -137,40 +142,87 @@ def generate_ticket(client: genai.Client) -> tuple[str, str, str]:
     for line in text.splitlines():
         low = line.lower().strip()
         if low.startswith("subject:"):
-            subject = line.split(":", 1)[1].strip() or subject
+            subject = line.split(":", 1)[1].strip()
         elif low.startswith("category:"):
-            category = line.split(":", 1)[1].strip() or category
-        elif low.startswith("description:"):
-            description = line.split(":", 1)[1].strip()
-    if not description:
-        description = transcript_text()[:2000]
-    return subject, category, description
+            category = line.split(":", 1)[1].strip() or "Other"
+        elif low.startswith("summary:"):
+            summary = line.split(":", 1)[1].strip()
+    return subject, category, summary
 
 
-def save_ticket(subject: str, category: str, description: str, contact: str) -> str:
-    ticket_id = f"TKT-{datetime.now():%Y%m%d-%H%M%S}"
-    row = {
-        "ticket_id": ticket_id,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "subject": subject,
-        "category": category,
-        "description": description,
-        "contact": contact,
-        "questions_asked": st.session_state.question_count,
-        "transcript": transcript_text(),
-    }
-    write_header = not TICKETS_CSV.exists()
-    with TICKETS_CSV.open("a", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(row))
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
-    return ticket_id
-
+# --------------------------------------------------------------------------- #
+# Ticket modal
+# --------------------------------------------------------------------------- #
 
 def reset_conversation() -> None:
-    for key in ("messages", "question_count", "stage", "last_ticket_id", "chat"):
+    for key in ("messages", "question_count", "stage", "last_ticket_id",
+                "chat", "ticket_draft", "open_ticket_dialog"):
         st.session_state.pop(key, None)
+
+
+@st.dialog("Submit a support ticket")
+def ticket_dialog(client: genai.Client) -> None:
+    """Separate modal window for filing a Jira ticket — kept apart from the chat."""
+    st.caption("This opens a separate ticket form. Your chat stays as it is.")
+
+    if not jira_configured():
+        st.error(
+            "Jira isn't configured. Add `JIRA_BASE_URL`, `JIRA_EMAIL`, "
+            "`JIRA_API_TOKEN` and `JIRA_PROJECT_KEY` to your `.env`, then restart."
+        )
+        if st.button("Close"):
+            st.rerun()
+        return
+
+    if "ticket_draft" not in st.session_state:
+        with st.spinner("Preparing a draft…"):
+            st.session_state.ticket_draft = draft_ticket(client)
+    draft_subject, draft_category, draft_summary = st.session_state.ticket_draft
+
+    with st.form("ticket_form"):
+        email = st.text_input("Your email", placeholder="you@example.com")
+        subject = st.text_input("Subject", value=draft_subject)
+        summary = st.text_area(
+            "Summary", value=draft_summary, height=170,
+            help="Describe the issue in your own words — add any context that helps.",
+        )
+        col_submit, col_cancel = st.columns(2)
+        submitted = col_submit.form_submit_button("Submit to Jira", use_container_width=True)
+        cancelled = col_cancel.form_submit_button("Cancel", use_container_width=True)
+
+    if cancelled:
+        st.session_state.pop("ticket_draft", None)
+        st.rerun()
+
+    if submitted:
+        if not (email.strip() and subject.strip() and summary.strip()):
+            st.error("Please fill in email, subject, and summary.")
+            return
+        try:
+            with st.spinner("Creating Jira issue…"):
+                key = create_issue(
+                    subject=subject.strip(),
+                    category=draft_category,
+                    summary=summary.strip(),
+                    contact=email.strip(),
+                    transcript=transcript_text(),
+                    question_count=st.session_state.question_count,
+                )
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Couldn't create the Jira issue:\n\n{exc}")
+            return
+        st.session_state.last_ticket_id = key
+        st.session_state.pop("ticket_draft", None)
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": (
+                f"✅ Ticket **[{key}]({browse_url(key)})** created in Jira.\n\n"
+                f"**Subject:** {subject.strip()}\n\n"
+                f"Our team will follow up at **{email.strip()}**."
+            ),
+        })
+        st.session_state.stage = "done"
+        st.rerun()
 
 
 # --------------------------------------------------------------------------- #
@@ -183,24 +235,24 @@ st.title("🩺 SugboDoc Support Assistant")
 # --- session state defaults ---
 st.session_state.setdefault("messages", [{"role": "assistant", "content": GREETING}])
 st.session_state.setdefault("question_count", 0)
-st.session_state.setdefault("stage", "chat")          # chat | feedback | offer_ticket | ticket_form | done
+st.session_state.setdefault("stage", "chat")          # chat | feedback | offer_ticket | done
 st.session_state.setdefault("last_ticket_id", None)
 
-# --- API key gate ---
+# --- sidebar / status ---
 api_key = get_api_key()
 with st.sidebar:
-    st.subheader("Settings")
-    st.text(f"Model: {MODEL}")
     if DOCS_PATH.exists():
         st.caption(f"📄 Grounded on `{DOCS_PATH.name}`")
     else:
         st.caption(f"⚠️ `{DOCS_PATH.name}` not found — answering without docs")
+    if jira_configured():
+        st.caption(f"🟢 Jira: `{JIRA_PROJECT_KEY}` · {JIRA_ISSUE_TYPE}")
+    else:
+        st.caption("🔴 Jira not configured — see `.env.example`")
     if not api_key:
         st.text_input("Gemini API key", type="password", key="api_key_input")
-        api_key = get_api_key()
+        api_key = api_key or st.session_state.get("api_key_input")
     st.metric("Questions this chat", st.session_state.question_count)
-    if TICKETS_CSV.exists():
-        st.caption(f"Tickets saved in `{TICKETS_CSV.name}`")
     if st.button("Start a new chat"):
         reset_conversation()
         st.rerun()
@@ -219,6 +271,10 @@ st.session_state.setdefault("chat", new_chat(client))
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
+# --- open the ticket modal when requested (consumed once) ---
+if st.session_state.pop("open_ticket_dialog", False):
+    ticket_dialog(client)
+
 # --- stage-specific UI ---
 stage = st.session_state.stage
 
@@ -230,7 +286,7 @@ if stage == "chat":
 
 elif stage == "feedback":
     with st.chat_message("assistant"):
-        st.write("Did that help?")
+        st.write("Did that help? You can also just keep typing below.")
         col_yes, col_no = st.columns(2)
         if col_yes.button("👍 Yes", use_container_width=True):
             st.session_state.messages.append(
@@ -239,60 +295,50 @@ elif stage == "feedback":
             st.session_state.stage = "done"
             st.rerun()
         if col_no.button("👎 No", use_container_width=True):
-            if st.session_state.question_count >= QUESTIONS_BEFORE_TICKET:
-                st.session_state.stage = "offer_ticket"
-            else:
-                st.session_state.messages.append(
-                    {"role": "assistant",
-                     "content": "No problem — tell me more and I'll try again."}
-                )
-                st.session_state.stage = "chat"
+            st.session_state.stage = "offer_ticket"
             st.rerun()
+    # chat stays available; a follow-up here counts as another question
+    if prompt := st.chat_input("Type your question…"):
+        with st.spinner("Thinking…"):
+            answer_user(prompt)
+        st.rerun()
 
 elif stage == "offer_ticket":
+    taking_long = st.session_state.question_count >= QUESTIONS_BEFORE_TICKET
     with st.chat_message("assistant"):
-        st.warning(
-            "This is taking a while to solve. Would you like to submit a support "
-            "ticket so our team can follow up?"
-        )
+        if taking_long:
+            st.warning(
+                "This is taking a while to solve. Would you like to submit a support "
+                "ticket, or tell me more?"
+            )
+        else:
+            st.write(
+                "Sorry that didn't help. Would you like to submit a ticket, or tell "
+                "me more so I can try again?"
+            )
         col_yes, col_no = st.columns(2)
-        if col_yes.button("📨 Yes, create a ticket", use_container_width=True):
-            st.session_state.stage = "ticket_form"
+        if col_yes.button("📨 Submit a ticket", use_container_width=True):
+            st.session_state.open_ticket_dialog = True
             st.rerun()
-        if col_no.button("Keep trying", use_container_width=True):
+        if col_no.button("💬 Tell me more", use_container_width=True):
             st.session_state.messages.append(
                 {"role": "assistant",
                  "content": "Okay — what else can you tell me about the issue?"}
             )
             st.session_state.stage = "chat"
             st.rerun()
-
-elif stage == "ticket_form":
-    with st.chat_message("assistant"):
-        st.write("I'll summarize this conversation into a ticket.")
-        with st.form("ticket_form"):
-            contact = st.text_input("Your email (optional)")
-            submitted = st.form_submit_button("Submit ticket")
-        if submitted:
-            with st.spinner("Creating ticket…"):
-                subject, category, description = generate_ticket(client)
-                ticket_id = save_ticket(subject, category, description, contact)
-            st.session_state.last_ticket_id = ticket_id
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": (
-                    f"✅ Ticket **{ticket_id}** created and saved.\n\n"
-                    f"**Subject:** {subject}  \n**Category:** {category}\n\n"
-                    "Our team will follow up"
-                    + (f" at **{contact}**." if contact else " shortly.")
-                ),
-            })
-            st.session_state.stage = "done"
-            st.rerun()
+    # typing here is the same as "tell me more"
+    if prompt := st.chat_input("Or keep describing the issue…"):
+        with st.spinner("Thinking…"):
+            answer_user(prompt)
+        st.rerun()
 
 elif stage == "done":
-    if st.session_state.last_ticket_id:
-        st.success(
-            f"Ticket {st.session_state.last_ticket_id} appended to {TICKETS_CSV.name}"
-        )
-    st.chat_message("assistant").write("Use **Start a new chat** in the sidebar to ask something else.")
+    key = st.session_state.last_ticket_id
+    if key:
+        st.success(f"Ticket {key} created in Jira.")
+        if jira_configured():
+            st.markdown(f"[Open {key} in Jira]({browse_url(key)})")
+    st.chat_message("assistant").write(
+        "Use **Start a new chat** in the sidebar to ask something else."
+    )
