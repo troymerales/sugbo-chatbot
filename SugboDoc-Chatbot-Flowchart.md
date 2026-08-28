@@ -1,0 +1,375 @@
+# Building the SugboDoc Assistant — Chatbot Development Flowchart
+
+A build plan for a **documentation support chatbot** that answers user questions strictly
+from the product docs. When it *can't* answer, it captures that failure and turns it into
+either a **Jira ticket** (on the user's say-so) or a **docs-update task** — so the knowledge
+base gets better over time.
+
+## The data flow in one picture
+
+```mermaid
+flowchart LR
+    U[User] <--> BOT[Chatbot<br/>reads docs only]
+    BOT -->|chat failed| CAP[Failure capture]
+    CAP -->|user opts in| TIX[Generate + append<br/>Jira ticket]
+    CAP --> QUEUE[(Doc-gap queue)]
+    TIX -.resolved / triaged.-> QUEUE
+    QUEUE --> UPD[Docs update<br/>human + LLM]
+    UPD --> DOCS[(SugboDoc-Documentation.md)]
+    DOCS --> BOT
+
+    style CAP fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style QUEUE fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style UPD fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+**Jira is outbound only.** The bot never retrieves tickets. The only thing it reads is
+`SugboDoc-Documentation.md`.
+
+Two constraints drive every choice:
+
+1. **Highlight real data science skill — but stay honest.** No classical technique used just
+   to show theory when a simpler or better modern tool wins. Section 8 lists what was
+   deliberately *not* used and why.
+2. **Minimal / zero cost.** The LLM is **Ollama**, local. Jira's REST API is free with any
+   account and is called only when a ticket is actually submitted.
+
+---
+
+## 0. Architecture decision — the docs fit in context, so there is no retrieval
+
+`SugboDoc-Documentation.md` is ~8k tokens. Any local model worth using has an 8k+ context
+window. So the whole doc goes in the prompt, every turn. **No chunking, no embeddings, no
+vector store, no RAG** — until the docs grow past roughly a quarter of the model's context
+budget.
+
+```mermaid
+flowchart TD
+    Q[How big are the docs?] --> A{Fit comfortably in<br/>the model context?}
+    A -->|yes — today| F1[Full doc in prompt<br/>no retrieval]
+    A -->|later, if docs 5–10x| F2[Add section-level retrieval<br/>BM25 + local embeddings]
+    F1 --> GEN[Ollama — grounded answer]
+    F2 --> GEN
+    GEN --> EVAL[Evaluation harness<br/>unchanged either way]
+
+    style F1 fill:#2f855a,stroke:#1a4731,color:#fff
+    style EVAL fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+The data science in this project is **not** in the retrieval stack. It's in (a) detecting
+when a chat failed, (b) generating a useful ticket, and (c) mining failures to prioritise
+doc work. Those are §2, §3, §6, §7.
+
+---
+
+## 1. Inference path (per turn) — deliberately simple
+
+```mermaid
+flowchart TD
+    U[User question] --> H[Prepend last few turns]
+    H --> P[Prompt = full docs<br/>+ answer rules + question]
+    P --> GEN[Ollama — mid model<br/>answer + cite section]
+    GEN --> VER[Verification pass<br/>Ollama — small model:<br/>is every sentence in the docs?]
+    VER -->|supported| ANS[Answer + section link]
+    VER -->|unsupported / no basis| REFUSE["I don't have enough<br/>information in my records"]
+    ANS --> FB[Ask: was this helpful?]
+    REFUSE --> OFFER[Offer: submit a ticket?<br/>or route to human support]
+    FB -->|no| OFFER
+    FB -->|yes| DONE[Log success]
+    OFFER --> CAP[Failure capture — §2]
+    DONE --> LOG[(Chat log)]
+    CAP --> LOG
+
+    style VER fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style OFFER fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+**Why a separate verification pass** — small local models are weak at self-policing "I don't
+know". A second cheap Ollama call that checks the draft answer against the docs catches
+hallucinations a frontier model would catch inline. Tune its strictness on the eval set (§6).
+
+**Data science work here**
+
+- The grounding/refusal rubric and few-shot refusal examples in the prompt
+- Verification-pass threshold tuning (precision/recall of "this answer is unsupported")
+- Latency profiling — two local calls per turn on CPU can be slow
+
+---
+
+## 2. Failure capture — when did the chat fail, and what do we do with it?
+
+```mermaid
+flowchart TD
+    subgraph Detect
+        S1[Bot refused<br/>'not enough information'] --> FAIL
+        S2[Thumbs-down] --> FAIL
+        S3[User re-asks same thing<br/>2+ times] --> FAIL
+        S4[User says 'wrong' / 'not helpful'] --> FAIL
+    end
+    FAIL[Flag conversation as failed] --> TRIAGE{What kind of gap?}
+    TRIAGE -->|missing / unclear docs| Q[(Doc-gap queue)]
+    TRIAGE -->|product bug / broken feature| ASK[Prompt user:<br/>'Want to submit a ticket?']
+    TRIAGE -->|out of scope| HUMAN[Route to human support]
+    ASK -->|yes| GEN[Ticket generation — §3]
+    ASK -->|no| Q
+    GEN --> Q
+
+    style FAIL fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style TRIAGE fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+**Detection: rules first, model later.** The two strong signals — the bot's own refusal and
+a thumbs-down — need no ML and cover most cases. Add the softer signals (repeated re-asking,
+negative follow-up) as rules too. Only train a dissatisfaction classifier once the logs have
+a few hundred labelled conversations *and* the rules are visibly missing failures.
+
+**Triage** can be a single Ollama call ("is this a docs gap, a product bug, or out of
+scope?") over the conversation — measured on the eval set like everything else. Every failed
+chat lands in the doc-gap queue regardless; the ticket is an extra branch.
+
+**Data science work here**
+
+- Failure-signal design and precision/recall of each signal against human-labelled chats
+- Triage classification quality (confusion matrix: docs-gap vs bug vs out-of-scope)
+- Deciding when the rules stop being enough (missed-failure rate over time)
+
+---
+
+## 3. Ticket generation & Jira append (only on user confirmation)
+
+```mermaid
+flowchart TD
+    C[Failed conversation<br/>+ user said yes] --> DRAFT[Ollama drafts ticket:<br/>title, description, steps,<br/>docs consulted, suggested issuetype]
+    DRAFT --> DEDUP[Check recent open tickets<br/>embed + cosine similarity<br/>the ONE time Jira is read]
+    DEDUP -->|near-duplicate exists| LINK[Show user the existing ticket<br/>optionally add a comment]
+    DEDUP -->|new| REVIEW[User / support reviews the draft]
+    REVIEW -->|approve| CREATE[POST to Jira REST API]
+    REVIEW -->|edit| CREATE
+    CREATE --> ID[Return ticket ID to user]
+    ID --> LOG[(Log: draft, edits, ticket ID)]
+
+    style DRAFT fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style DEDUP fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+**The dedup step is the only Jira read in the whole system** — and it's per *submission*,
+not per request. Pull the last ~100 open tickets, embed their summaries, compare to the
+draft. Stops the queue filling with ten copies of the same bug.
+
+**Data science work here**
+
+- Ticket-draft quality: track **human edit distance** and **acceptance rate** — is the LLM
+  draft good enough to approve with minor edits? This is a measurable generation-quality metric.
+- Duplicate-detection threshold tuning (precision/recall of "this is a dup")
+- Suggested-issuetype accuracy vs. what the reviewer picks
+
+---
+
+## 4. Docs maintenance loop — "every time I want to update the docs"
+
+```mermaid
+flowchart TD
+    Q[(Doc-gap queue)] --> CLUS[Cluster the failed questions<br/>HDBSCAN over embeddings]
+    CLUS --> RANK[Rank clusters<br/>frequency x how-stuck-the-user-was]
+    JIRA[Resolved Jira tickets<br/>bugs fixed / features shipped] --> RANK
+    RANK --> PICK[Pick the top gaps this cycle]
+    PICK --> DRAFT[Ollama drafts the doc change<br/>grounded in the failed chats + ticket]
+    DRAFT --> HUMAN[Human reviews & edits]
+    HUMAN --> MERGE[Update SugboDoc-Documentation.md]
+    MERGE --> RESCORE[Re-run eval harness]
+    RESCORE -->|no regression| SHIP[Ship new docs]
+    RESCORE -->|regression| HUMAN
+
+    style CLUS fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style RANK fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style RESCORE fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+This runs on your schedule — weekly, or whenever the queue is worth a pass. Resolved Jira
+tickets feed in here (a fixed bug or shipped feature often means a doc is now wrong), which
+is the *indirect* path from Jira back to the bot: **Jira → docs → bot**, never Jira → bot.
+
+**Data science work here**
+
+- Clustering failed questions, labelling clusters, ranking by impact
+- For each doc change: add a matching eval case *before* merging, so the fix is verified
+- Regression tracking — the frozen scorecard re-run on every docs edit
+
+---
+
+## 5. Docs preparation (one-time, already mostly done)
+
+```mermaid
+flowchart LR
+    V[Tutorial video] --> W[Re-transcribe: faster-whisper<br/>local, free, beats the raw ASR]
+    RAW[existing transcript.txt] --> LP[One LLM cleanup pass<br/>Ollama, one-time + glossary]
+    W --> LP
+    CH[chapters.txt] --> SEG[Split by chapter marks<br/>already human-segmented]
+    LP --> SEG
+    SEG --> DOC[SugboDoc-Documentation.md<br/>the single source of truth]
+
+    style DOC fill:#2f855a,stroke:#1a4731,color:#fff
+```
+
+`chapters.txt` is already a human topic segmentation; the curated markdown is the KB. No
+spell-correction pipeline, no TextTiling — see §8.
+
+---
+
+## 6. Evaluation harness — the data science centrepiece
+
+Nothing here is at risk of being "outperformed by another tech" — measurement is what tells
+you which tech wins.
+
+```mermaid
+flowchart TD
+    subgraph Build the eval set
+        L[Real questions from logs] --> ES[Gold set:<br/>question + expected doc section<br/>+ ideal answer + expected behaviour]
+        S[Synthetic questions<br/>generated from each doc section] --> ES
+        HU[Human review of a sample] --> ES
+        NEG[Out-of-scope questions<br/>the bot MUST refuse] --> ES
+    end
+
+    ES --> A1[Answer correctness & completeness]
+    ES --> A2[Groundedness — every claim in the docs]
+    ES --> A3[Correct refusal<br/>says 'not enough info' when it should]
+    ES --> A4[Ticket-draft quality<br/>edit distance, acceptance rate]
+    ES --> A5[Triage accuracy<br/>docs-gap vs bug vs out-of-scope]
+
+    A1 --> J[LLM-as-judge<br/>largest local model, NOT the answer model<br/>+ rubric]
+    A2 --> J
+    A3 --> J
+    J --> CAL[Calibrate vs 40–60 human labels<br/>report Cohen's kappa]
+    CAL --> CARD[Scorecard per config]
+    A4 --> CARD
+    A5 --> CARD
+    CARD --> CMP[Compare configs<br/>bootstrap CIs, not point estimates]
+    CMP --> GATE{Ship?}
+
+    style J fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style CAL fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style CMP fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style A3 fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+**Data science skills exercised**
+
+- Eval-set design, including a **dedicated "must refuse" slice** — the hallucination guard
+  is only as good as its test set
+- Generation-quality metrics that aren't just vibes: **ticket-draft edit distance and
+  acceptance rate**, refusal precision/recall
+- LLM-as-judge done properly — rubric, calibration against human labels, Cohen's κ. **A
+  local judge is a weaker judge**: expect lower κ, keep a fixed 40–60 question human panel
+  per release, use the biggest model you can load for judging
+- Config comparison with **bootstrap confidence intervals**; multiple-comparison awareness
+- Frozen scorecard re-run on every prompt / docs change
+
+**Zero cost:** [`promptfoo`](https://www.promptfoo.dev/) (native Ollama provider) or a
+~150-line Python harness against the local Ollama API; human labels in a spreadsheet.
+
+---
+
+## 7. Analytics — mine the failures
+
+```mermaid
+flowchart TD
+    LOG[(Chat logs)] --> EMB[Embed failed questions<br/>local model]
+    EMB --> CLU[Cluster — HDBSCAN]
+    CLU --> LBL[Label clusters = real unmet needs]
+    LBL --> IMP[Impact score<br/>frequency x severity x recency]
+    IMP --> B1[Top clusters → doc-gap queue §4]
+    IMP --> B2[Bug-shaped clusters → proactive Jira ticket]
+    LOG --> KPI[KPIs<br/>answer rate, refusal rate,<br/>thumbs-up rate, ticket-submit rate,<br/>repeat-question rate]
+    KPI --> DRIFT[Weekly: is the question mix shifting?]
+
+    style CLU fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style IMP fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+Clustering real failed questions is the best way to see *what users actually can't get
+answered* and where to spend doc effort. Cheap, unsupervised, not replaced by anything
+better.
+
+**Data science skills** — embedding + density clustering, cluster labelling, impact
+scoring, coverage-gap analysis, drift checks, product analytics (answer rate, containment,
+repeat-question rate).
+
+---
+
+## 8. Techniques deliberately NOT used (and why)
+
+| Not used | Textbook reason to use it | Why it loses here |
+|---|---|---|
+| **Per-request Jira retrieval / RAG over tickets** | "Feed operational context into every answer" | The bot answers from docs; tickets are a *write* target. Reading tickets per turn adds latency, a sync pipeline, and stale-status risk for zero benefit. Jira reaches the bot only via **Jira → docs → bot**. |
+| Vector DB for the docs (today) | "RAG needs embeddings" | Docs are ~8k tokens — the whole thing fits in the prompt. Retrieval only adds a missed-chunk failure mode. Revisit at ~5–10× the size. |
+| Dissatisfaction / sentiment classifier (day one) | Detect failed chats | The bot's own refusal + a thumbs-down button catch most failures with zero ML. Train a classifier only once rules are demonstrably missing failures. |
+| Classifier for suggested Jira issue type | Auto-file with the right type | Let the LLM suggest it in the draft; the reviewer corrects it. Track accuracy, don't train a model for a field a human approves anyway. |
+| Cross-encoder reranker | Best-in-class reranking | Nothing to rerank — no retrieval in the inference path. |
+| TextTiling / embedding topic segmentation | Automatic passage boundaries | `chapters.txt` is already a human segmentation. |
+| SymSpell / Levenshtein + seq2seq punctuation restoration | Clean noisy ASR | Re-running Whisper fixes it at the source; one LLM pass handles the rest. |
+| NLI entailment model for groundedness | Verify answers are supported | A rubric-based Ollama verification pass is simpler and reuses infra you already have. |
+| Fine-tuning / LoRA the local model | Better grounding on your domain | No labelled data yet; hardened prompt + verification pass + tight scope get you further first. Revisit once §7 has produced a few hundred graded answers. |
+
+---
+
+## 9. Zero-cost / local stack
+
+| Layer | Free choice | Note |
+|---|---|---|
+| Glue / notebooks | Python, `pandas`, `scikit-learn` | — |
+| Generation LLM | **Ollama** — small model (~3–4B) for verification + triage, mid model (~8–14B) for answers & ticket drafts | `ollama serve`; keep both pulled |
+| LLM-as-judge | **Ollama** — largest model your hardware runs, different from the answer model | expect a weaker judge; keep a human panel |
+| Embeddings (dedup + clustering) | Ollama (`nomic-embed-text`) or `sentence-transformers` (`bge-small-en`) | CPU-fine; used offline, not per turn |
+| Jira write | Jira Cloud REST API + `requests` | free with any account; called only on ticket submit |
+| Re-transcription | `faster-whisper` | one-time, CPU-fine for a ~1 h video |
+| NLP | `spaCy`, `nltk` | glossary mining, PII redaction |
+| Clustering / analytics | `hdbscan`, `umap-learn` | the failure-mining loop |
+| Eval | `promptfoo` (native Ollama provider) or a small custom harness | — |
+| Serving | FastAPI + Ollama on one host | chat data stays local |
+| Experiment tracking | git + the markdown scorecard; local `mlflow` if you want a UI | — |
+| Hardware | ~16 GB RAM for a 14B model at Q4; GPU optional | the one real cost of this path |
+
+---
+
+## 10. Milestone sequence
+
+```mermaid
+flowchart LR
+    M0[M0<br/>Clean docs<br/>+ 80–120 Q&A eval set<br/>incl. 'must refuse' slice] --> M1[M1<br/>Inference bot<br/>full docs + verification pass]
+    M1 --> M2[M2<br/>Eval harness + scorecard]
+    M2 --> M3[M3<br/>Failure capture + thumbs feedback<br/>logging live]
+    M3 --> M4[M4<br/>Ticket generation + Jira append<br/>with human review]
+    M4 --> M5[M5<br/>Failure clustering<br/>→ docs maintenance loop]
+    M5 --> M6[M6<br/>Triage model / retrieval<br/>only if the scorecard demands it]
+```
+
+Ship a measurable baseline at **M1**; stand up evaluation at **M2** before anything else —
+every later change is judged against the frozen scorecard.
+
+---
+
+## 11. Skills-to-stage map
+
+| Stage | Data science competency on display |
+|---|---|
+| §0 architecture choice | Recognising the docs fit in context — knowing when retrieval is premature |
+| §2 failure capture | Failure-signal design, precision/recall per signal, triage classification, knowing when rules beat a model |
+| §3 ticket generation | Generation-quality metrics (edit distance, acceptance rate), embedding dedup, threshold tuning |
+| §4 docs maintenance | Failure clustering, impact ranking, eval-case-before-merge discipline, regression tracking |
+| §6 evaluation | Eval-set design (incl. refusal slice), LLM-judge calibration (κ) with a local judge, bootstrap inference, frozen scorecard |
+| §7 analytics | Embedding clustering (HDBSCAN), impact scoring, coverage-gap analysis, drift checks, product analytics |
+| §1 inference | Prompt/rubric design measured against eval, verification-pass tuning to compensate for a weaker base model |
+| §8 scoping | Judgement about what to leave out — *no per-request Jira retrieval, no vector DB, no classifier for data a human approves* |
+
+The strongest signal is §6 and §8: a rigorous evaluation harness, and the discipline to keep
+the inference path trivial and put the intelligence into the feedback loop that improves the
+docs.
+
+---
+
+## Note on `system-prompt.md`
+
+The prompt you saved has an **"Operational Awareness (Jira Integration)"** clause that
+assumes retrieved Jira tickets appear in `<retrieved_context>`. Under this architecture the
+bot never sees tickets, so that clause is dead weight — it can be dropped, and the
+`<retrieved_context>` block simplifies to doc passages only. Say the word and I'll trim it.
