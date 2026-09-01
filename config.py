@@ -53,7 +53,7 @@ LOG_DIR.mkdir(exist_ok=True)
 # --------------------------------------------------------------------------- #
 
 # The model that answers users.
-ANSWER_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+ANSWER_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 # Cheap/fast model for the utility calls: verification pass, triage, ticket draft,
 # cluster labelling. Keep it small — these run often.

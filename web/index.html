@@ -176,18 +176,60 @@
   .msg.bot.md pre code{background:transparent; padding:0;}
   .msg.bot.md a{color:var(--indigo);}
 
+  /* "assistant is typing" — three bouncing dots, Messenger-style */
+  .typing{display:inline-flex; gap:5px; align-items:center; width:fit-content;
+    background:#eef0f5; padding:12px 15px; border-radius:12px; margin:8px 0;}
+  .typing span{width:7px; height:7px; border-radius:50%; background:#9aa1b3;
+    animation:typing-bounce 1.3s infinite ease-in-out;}
+  .typing span:nth-child(2){animation-delay:.18s;}
+  .typing span:nth-child(3){animation-delay:.36s;}
+  @keyframes typing-bounce{
+    0%,70%,100%{transform:translateY(0);   opacity:.4;}
+    35%        {transform:translateY(-5px); opacity:1;}
+  }
+  @media (prefers-reduced-motion:reduce){ .typing span{animation-duration:0s;} }
+
   .wctrl{padding:8px 12px; display:flex; gap:8px; flex-wrap:wrap; border-top:1px solid var(--line);}
   .wctrl:empty{display:none;}
   .wctrl button{flex:1; min-width:120px; border:0; border-radius:9px; padding:9px 10px;
     font:inherit; font-weight:600; cursor:pointer; background:var(--indigo); color:#fff;}
   .wctrl button.secondary{background:#e9eaf6; color:#333ac2;}
 
-  .ticket{padding:12px; border-top:1px solid var(--line); background:#fff;}
-  .ticket label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
-  .ticket input,.ticket textarea{width:100%; padding:8px; border:1px solid var(--line);
-    border-radius:7px; font:inherit;}
+  /* ticket form — a centred modal over a dimmed page */
+  .modal-overlay{
+    position:fixed; inset:0; z-index:200;
+    background:rgba(20,22,50,.5); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+    opacity:0; transition:opacity .16s ease;
+  }
+  .modal-overlay.open{opacity:1;}
+  .modal-card{
+    width:420px; max-width:100%; max-height:calc(100vh - 40px); overflow-y:auto;
+    background:var(--card); border-radius:16px; box-shadow:0 30px 70px rgba(10,12,40,.4);
+    transform:translateY(10px) scale(.97); transition:transform .16s ease;
+  }
+  .modal-overlay.open .modal-card{transform:none;}
+  .modal-head{display:flex; align-items:center; gap:10px; padding:15px 18px;
+    border-bottom:1px solid var(--line);}
+  .modal-head b{font-size:15px;}
+  .modal-head .x{margin-left:auto; background:transparent; border:0; font-size:20px;
+    line-height:1; cursor:pointer; color:var(--muted); padding:2px 4px;}
+  .ticket{padding:16px 18px;}
+  .ticket label{display:block; font-size:12px; color:var(--muted); margin:10px 0 3px;}
+  .ticket label:first-child{margin-top:0;}
+  .ticket input,.ticket textarea{width:100%; padding:9px 10px; border:1px solid var(--line);
+    border-radius:8px; font:inherit;}
+  .ticket .actions{display:flex; gap:8px; margin-top:16px;}
+  .ticket .actions button{flex:1; border:0; border-radius:9px; padding:11px 10px;
+    font:inherit; font-weight:600; cursor:pointer; background:var(--indigo); color:#fff;}
+  .ticket .actions button.secondary{background:#e9eaf6; color:#333ac2;}
+  .ticket .actions button:disabled{opacity:.6; cursor:default;}
   .dup{background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:8px;
-    padding:9px; font-size:12.5px; margin-bottom:8px;}
+    padding:10px; font-size:12.5px; margin-bottom:6px;}
+  .dup button{margin-top:8px; border:0; border-radius:7px; padding:6px 10px;
+    font:inherit; font-weight:600; cursor:pointer; background:#e9eaf6; color:#333ac2;}
+  .ticket .err{background:#fdecec; border:1px solid #f0a9a9; color:#a12a2a;
+    border-radius:8px; padding:9px 10px; font-size:12.5px; margin-top:12px;}
 
   form.wsend{display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); background:#fff;}
   form.wsend input{flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font:inherit;}
@@ -321,7 +363,7 @@ const FALLBACK_GREETING = "Hi! I'm the SugboDoc support assistant. Ask me about 
 let convId = localStorage.getItem("sugbodoc_conv") || null;
 let shown = 0;          // # of server-side messages already rendered
 let started = false;    // has the current chat been initialised in the log?
-let triageShown = false;
+let typingEl = null;    // the "assistant is typing" bubble, when visible
 
 const fab = document.getElementById("fab");
 const widget = document.getElementById("widget");
@@ -352,7 +394,21 @@ function add(role, text) {
 
 function clearLog() {
   log.innerHTML = ""; controls.innerHTML = ""; ticketMount.innerHTML = "";
-  triageShown = false;
+  typingEl = null;
+}
+
+/* ---- "assistant is typing" indicator ---- */
+function showTyping() {
+  if (typingEl) return;
+  typingEl = document.createElement("div");
+  typingEl.className = "typing";
+  typingEl.setAttribute("aria-label", "Assistant is typing");
+  typingEl.innerHTML = "<span></span><span></span><span></span>";
+  log.appendChild(typingEl);
+  log.scrollTop = log.scrollHeight;
+}
+function hideTyping() {
+  if (typingEl) { typingEl.remove(); typingEl = null; }
 }
 
 // Render every server message we haven't shown yet (fixes terminal replies
@@ -430,10 +486,6 @@ async function api(path, opts) {
 function render(state) {
   controls.innerHTML = "";
   ticketMount.innerHTML = "";
-  if (state.triage && !triageShown) {
-    add("sys", "flagged as: " + state.triage.label.replace(/_/g, " "));
-    triageShown = true;
-  }
 
   if (state.stage === "feedback") {
     controls.innerHTML = `<button id="yes">👍 That helped</button>
@@ -453,36 +505,97 @@ function render(state) {
 }
 
 async function send(path, body) {
-  const state = await api(path, { method: "POST", body: JSON.stringify(body) });
+  showTyping();
+  let state;
+  try { state = await api(path, { method: "POST", body: JSON.stringify(body) }); }
+  finally { hideTyping(); }
   syncMessages(state);
   render(state);
 }
 
 async function openTicket() {
+  if (document.querySelector(".modal-overlay")) return;   // already open
   const draft = await api("/ticket/draft?conversation_id=" + convId);
-  const box = document.createElement("div"); box.className = "ticket";
-  box.innerHTML = `
-    ${draft.duplicate ? `<div class="dup">Looks similar to existing ticket
-      <b>${draft.duplicate.key}</b> — ${draft.duplicate.summary}
-      (similarity ${draft.duplicate.similarity}).
-      <button id="isDup" class="secondary" style="margin-top:6px">That's my issue</button></div>` : ""}
-    <label>Your email</label><input id="tEmail" type="email" placeholder="you@example.com">
-    <label>Subject</label><input id="tSubject" value="${(draft.subject||"").replace(/"/g,"&quot;")}">
-    <label>Summary</label><textarea id="tSummary" rows="4">${draft.summary||""}</textarea>
-    <div class="wctrl" style="padding:10px 0 0;border:0">
-      <button id="tSubmit">Submit to Jira</button>
-      <button id="tCancel" class="secondary">Cancel</button></div>`;
-  ticketMount.appendChild(box);
-  if (draft.duplicate) isDup.onclick = () =>
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const esc = (s) => (s || "").replace(/"/g, "&quot;");
+  overlay.innerHTML = `
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Submit a support ticket">
+      <div class="modal-head"><b>📨 Submit a support ticket</b>
+        <button class="x" data-x aria-label="Close">×</button></div>
+      <div class="ticket">
+        ${draft.duplicate ? `<div class="dup">Looks similar to existing ticket
+          <b>${draft.duplicate.key}</b> — ${draft.duplicate.summary}
+          (similarity ${draft.duplicate.similarity}).
+          <button data-dup>That's my issue — link it instead</button></div>` : ""}
+        <label>Your email</label>
+        <input data-f="email" type="email" placeholder="you@example.com">
+        <label>Subject</label>
+        <input data-f="subject" value="${esc(draft.subject)}">
+        <label>Summary</label>
+        <textarea data-f="summary" rows="4">${(draft.summary || "").replace(/</g, "&lt;")}</textarea>
+        <label>When do you need this? <span style="color:var(--muted)">(optional)</span></label>
+        <input data-f="when" type="date">
+        <div data-err class="err" hidden></div>
+        <div class="actions">
+          <button data-submit>Submit to Jira</button>
+          <button data-cancel class="secondary">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  void overlay.offsetWidth;              // force reflow so the enter transition runs
+  overlay.classList.add("open");
+
+  const $ = (sel) => overlay.querySelector(sel);
+  const f = (name) => $(`[data-f="${name}"]`);
+  const err = $("[data-err]");
+  const submitBtn = $("[data-submit]");
+  const cancelBtn = $("[data-cancel]");
+
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  function close() {
+    overlay.classList.remove("open");
+    document.removeEventListener("keydown", onKey);
+    setTimeout(() => overlay.remove(), 180);
+  }
+  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
+  $("[data-x]").onclick = close;
+  cancelBtn.onclick = close;
+  f("email").focus();
+
+  const dupBtn = $("[data-dup]");
+  if (dupBtn) dupBtn.onclick = () => {
+    close();
     send("/ticket/link-duplicate", { conversation_id: convId });
-  tCancel.onclick = () => ticketMount.innerHTML = "";
-  tSubmit.onclick = async () => {
-    const res = await api("/ticket", { method: "POST", body: JSON.stringify({
-      conversation_id: convId, email: tEmail.value,
-      subject: tSubject.value, summary: tSummary.value, category: draft.category,
-    })});
-    ticketMount.innerHTML = "";
-    syncMessages(res);   // renders the "Ticket … created" confirmation message
+  };
+
+  submitBtn.onclick = async () => {
+    if (!f("email").value.trim() || !f("subject").value.trim() || !f("summary").value.trim()) {
+      err.textContent = "Please fill in email, subject and summary.";
+      err.hidden = false;
+      return;
+    }
+    submitBtn.disabled = cancelBtn.disabled = true;
+    submitBtn.textContent = "Submitting…";
+    let res;
+    try {
+      res = await api("/ticket", { method: "POST", body: JSON.stringify({
+        conversation_id: convId, email: f("email").value.trim(),
+        subject: f("subject").value.trim(), summary: f("summary").value.trim(),
+        category: draft.category, needed_by: f("when").value.trim(),
+      })});
+    } catch (e) {
+      err.textContent = "Couldn't create the ticket — please try again.";
+      err.hidden = false;
+      submitBtn.disabled = cancelBtn.disabled = false;
+      submitBtn.textContent = "Submit to Jira";
+      return;
+    }
+    close();                                   // back to the chat window…
+    syncMessages(res);                         // …which now shows "✅ Ticket … created"
     render(res);
   };
 }
@@ -499,8 +612,13 @@ document.getElementById("chatForm").onsubmit = async (e) => {
   add("user", msg); q.value = "";
   shown += 1;          // the server will echo this user message back
 
-  const state = await api("/chat", { method: "POST",
-    body: JSON.stringify({ conversation_id: convId, message: msg }) });
+  showTyping();
+  let state;
+  try {
+    state = await api("/chat", { method: "POST",
+      body: JSON.stringify({ conversation_id: convId, message: msg }) });
+  } finally { hideTyping(); }
+
   convId = state.conversation_id;
   localStorage.setItem("sugbodoc_conv", convId);
   syncMessages(state);

@@ -53,6 +53,8 @@ class ConversationRecord:
     thumbs: str | None = None           # up | down | None
     ticket_id: str | None = None
     ticket_category: str | None = None
+    needed_by: str | None = None        # user's "when do you need this?" answer
+    due_date: str | None = None         # parsed target date (YYYY-MM-DD)
     duplicate_of: str | None = None
 
     @property
@@ -128,7 +130,7 @@ CSV_FIELDS = [
     "conversation_id", "started_at", "ended_at", "outcome",
     "question_count", "n_messages", "failed", "failure_signals",
     "grounding_checks", "triage_label", "triage_confidence", "thumbs",
-    "ticket_id", "ticket_category", "duplicate_of",
+    "ticket_id", "ticket_category", "needed_by", "due_date", "duplicate_of",
     "first_user_question", "last_assistant_message",
 ]
 
@@ -150,6 +152,8 @@ def _csv_row(rec: ConversationRecord) -> dict:
         "thumbs": rec.thumbs or "",
         "ticket_id": rec.ticket_id or "",
         "ticket_category": rec.ticket_category or "",
+        "needed_by": rec.needed_by or "",
+        "due_date": rec.due_date or "",
         "duplicate_of": rec.duplicate_of or "",
         "first_user_question": rec.first_user_question(),
         "last_assistant_message": answers[-1] if answers else "",

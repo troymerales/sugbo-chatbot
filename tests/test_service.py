@@ -84,6 +84,39 @@ def test_refusal_leads_to_ticket_offer_and_creation(client):
     assert res["ticket_id"] == "KAN-999"
 
 
+def test_ticket_passes_reporter_email_and_due_date(client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(service.jira_client, "create_issue",
+                        lambda **kw: captured.update(kw) or "KAN-777")
+
+    r = client.post("/chat", json={"message": "totally unrelated nonsense"}).json()
+    res = client.post("/ticket", json={
+        "conversation_id": r["conversation_id"], "email": "user@clinic.ph",
+        "subject": "s", "summary": "y", "category": "Other",
+        "needed_by": "2099-01-15",                      # from the date picker
+    }).json()
+
+    assert res["ticket_id"] == "KAN-777"
+    assert captured["contact"] == "user@clinic.ph"      # reporter identity
+    assert captured["due_date"] == "2099-01-15"
+    assert captured["urgency"] == "low"                 # far in the future
+    assert "Target date" in res["messages"][-1]["content"]
+    assert "needed_by" not in captured                  # no free-text field anymore
+
+
+def test_ticket_ignores_a_bad_date(client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(service.jira_client, "create_issue",
+                        lambda **kw: captured.update(kw) or "KAN-778")
+    r = client.post("/chat", json={"message": "totally unrelated nonsense"}).json()
+    client.post("/ticket", json={
+        "conversation_id": r["conversation_id"], "email": "u@e.com",
+        "subject": "s", "summary": "y", "needed_by": "sometime soon",
+    })
+    assert captured["due_date"] is None
+    assert captured["urgency"] == "medium"
+
+
 def test_unknown_conversation_id_404(client):
     r = client.post("/feedback", json={"conversation_id": "nope", "helpful": True})
     assert r.status_code == 404

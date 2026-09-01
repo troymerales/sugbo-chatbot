@@ -6,9 +6,9 @@ functions. `app.py` (the Streamlit demo) implements the same flow inline against
 `st.session_state` — it predates this module and could be refactored onto it.
 
 Stages:  chat  ->  feedback  ->  offer_ticket  ->  done
-The model work (answer + verification pass + triage + ticket draft) lives in
-bot.py / grounding.py / failure_capture.py / ticketing.py — this module only
-sequences it and tracks state.
+The only model work per conversation is the answer + the verification pass
+(bot.py / grounding.py). Failure detection is rule-based; the ticket draft is a
+deterministic default — both to keep LLM cost down.
 """
 
 from __future__ import annotations
@@ -37,10 +37,11 @@ class Conversation:
     stage: str = "chat"                       # chat | feedback | offer_ticket | done
     grounding_checks: list[dict] = field(default_factory=list)
     failure_signals: list[str] = field(default_factory=list)
-    triage: dict | None = None
     thumbs: str | None = None
     ticket_id: str | None = None
     ticket_category: str | None = None
+    needed_by: str | None = None          # the "when do you need this?" date (YYYY-MM-DD)
+    due_date: str | None = None           # same value, kept for the chat log column
     duplicate_of: str | None = None
     logged: bool = False
 
@@ -112,10 +113,6 @@ def _enter_failure(conv: Conversation, *, grounding_failed: bool = False,
         conv.messages, thumbs_down=thumbs_down, grounding_failed=grounding_failed
     )
     conv.failure_signals = sorted(set(conv.failure_signals) | set(sig.as_list()))
-    if conv.triage is None or thumbs_down:
-        tri = failure_capture.triage(conv.transcript())
-        conv.triage = {"label": tri.label, "confidence": round(tri.confidence, 2),
-                       "rationale": tri.rationale}
     conv.stage = "offer_ticket"
 
 
@@ -124,7 +121,7 @@ def _enter_failure(conv: Conversation, *, grounding_failed: bool = False,
 # --------------------------------------------------------------------------- #
 
 def ticket_draft(conv: Conversation) -> dict:
-    draft = ticketing.draft_ticket(conv.transcript())
+    draft = ticketing.default_draft(conv.transcript())   # no model call
     dup = jira_dedup.find_duplicate(draft.subject, draft.summary)
     conv.duplicate_of = dup.key if dup else None
     return {
@@ -139,22 +136,29 @@ def ticket_draft(conv: Conversation) -> dict:
 
 
 def submit_ticket(conv: Conversation, *, email: str, subject: str, summary: str,
-                  category: str = "Other") -> dict:
+                  category: str = "Other", needed_by: str = "") -> dict:
     if not jira_client.jira_configured():
         raise RuntimeError("Jira is not configured (JIRA_* env vars).")
-    tri_label = (conv.triage or {}).get("label", "")
+
+    due_date = ticketing.as_iso_date(needed_by)
+    urgency = ticketing.urgency_for_date(due_date)
+    conv.needed_by = due_date
+    conv.due_date = due_date
+
     key = jira_client.create_issue(
         subject=subject, category=category, summary=summary, contact=email,
         transcript=conv.transcript(), question_count=conv.question_count,
-        extra_labels=[f"triage-{tri_label}"] if tri_label else None,
+        due_date=due_date, urgency=urgency,
     )
     conv.ticket_id = key
     conv.ticket_category = category
     url = jira_client.browse_url(key)
+
+    when = f" Target date **{due_date}**." if due_date else ""
     conv.messages.append({
         "role": "assistant",
         "content": (
-            f"✅ Ticket **{key}** created in Jira — [open it]({url}). "
+            f"✅ Ticket **{key}** created in Jira — [open it]({url}).{when} "
             f"Our team will follow up at **{email}**."
         ),
     })
@@ -185,7 +189,6 @@ def _state(conv: Conversation, *, extra: dict | None = None) -> dict:
         "question_count": conv.question_count,
         "messages": conv.messages,
         "failure_signals": conv.failure_signals,
-        "triage": conv.triage,
         "offer_ticket": conv.stage == "offer_ticket",
         "ticket_id": conv.ticket_id,
     }
@@ -206,11 +209,11 @@ def _log(conv: Conversation, outcome: str) -> None:
         messages=list(conv.messages),
         failure_signals=list(conv.failure_signals),
         grounding_checks=list(conv.grounding_checks),
-        triage_label=(conv.triage or {}).get("label"),
-        triage_confidence=(conv.triage or {}).get("confidence"),
         thumbs=conv.thumbs,
         ticket_id=conv.ticket_id,
         ticket_category=conv.ticket_category,
+        needed_by=conv.needed_by,
+        due_date=conv.due_date,
         duplicate_of=conv.duplicate_of,
     ))
     conv.logged = True
@@ -241,10 +244,11 @@ def serialize(conv: Conversation) -> dict:
         "stage": conv.stage,
         "grounding_checks": conv.grounding_checks,
         "failure_signals": conv.failure_signals,
-        "triage": conv.triage,
         "thumbs": conv.thumbs,
         "ticket_id": conv.ticket_id,
         "ticket_category": conv.ticket_category,
+        "needed_by": conv.needed_by,
+        "due_date": conv.due_date,
         "duplicate_of": conv.duplicate_of,
         "logged": conv.logged,
     }
@@ -263,10 +267,11 @@ def deserialize(data: dict) -> Conversation:
         stage=data.get("stage", "chat"),
         grounding_checks=list(data.get("grounding_checks", [])),
         failure_signals=list(data.get("failure_signals", [])),
-        triage=data.get("triage"),
         thumbs=data.get("thumbs"),
         ticket_id=data.get("ticket_id"),
         ticket_category=data.get("ticket_category"),
+        needed_by=data.get("needed_by"),
+        due_date=data.get("due_date"),
         duplicate_of=data.get("duplicate_of"),
         logged=data.get("logged", False),
     )

@@ -47,9 +47,3 @@ def test_thumbs_down_and_grounding_flags_passthrough():
     sig = fc.detect_failures(_msgs(("user", "q")), thumbs_down=True, grounding_failed=True)
     assert sig.thumbs_down and sig.grounding_failed and sig.failed
     assert set(sig.as_list()) >= {"thumbs_down", "grounding_failed"}
-
-
-def test_triage_returns_valid_label():
-    res = fc.triage("User: is there a mobile app for iphone\nAssistant: no info")
-    assert res.label in ("docs_gap", "product_bug", "out_of_scope")
-    assert res.label == "out_of_scope"  # mock keys on 'mobile'/'iphone'

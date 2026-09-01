@@ -1,27 +1,21 @@
 """
 Failure capture (§2 of the architecture doc).
 
-Two jobs:
-  1. detect_failures()  — rule-based signals that a chat has gone wrong.
-     Rules first, model later: the bot's own refusal and a thumbs-down cover
-     most cases with zero ML. A classifier is only worth training once the logs
-     show the rules missing failures.
-  2. triage()           — one model call: is this a docs gap, a product bug, or
-     out of scope? Decides whether to offer a ticket and where the failure goes
-     in the docs-maintenance queue.
+`detect_failures()` — rule-based signals that a chat has gone wrong. Rules only,
+zero ML: the bot's own refusal, a thumbs-down, a re-asked question, or a "this
+is wrong" phrase. A classifier is only worth training once the logs show these
+rules missing failures.
+
+(An LLM `triage()` call — docs-gap / product-bug / out-of-scope — used to run
+here too; it was removed to cut per-conversation model cost.)
 """
 
 from __future__ import annotations
 
 import difflib
-import json
 from dataclasses import dataclass, field
-from typing import Literal
 
 import config
-from core.llm import LLMError, QuotaError, generate
-
-TriageLabel = Literal["docs_gap", "product_bug", "out_of_scope"]
 
 _NEGATIVE_PHRASES = (
     "not helpful", "didn't help", "doesn't help", "that's wrong", "thats wrong",
@@ -99,55 +93,3 @@ def detect_failures(
         sig.reasons.append("user said the answer was wrong / unhelpful")
 
     return sig
-
-
-# --------------------------------------------------------------------------- #
-# Triage
-# --------------------------------------------------------------------------- #
-
-_TRIAGE_RUBRIC = """You triage failed support conversations for SugboDoc, a
-clinic management SaaS.
-
-Classify the conversation into exactly one of:
-- "docs_gap": the product probably does what the user wants, but the
-  documentation doesn't explain it (or explains it unclearly).
-- "product_bug": the user describes something broken — an error, a missing
-  button that should be there, a feature not behaving as documented.
-- "out_of_scope": the request is not about using SugboDoc (billing disputes,
-  legal questions, integrations that don't exist, general medical advice).
-
-Reply with JSON only: {"label": "...", "confidence": 0.0-1.0, "rationale": "one sentence"}"""
-
-
-@dataclass(frozen=True)
-class TriageResult:
-    label: TriageLabel
-    confidence: float
-    rationale: str
-
-    @property
-    def should_offer_ticket(self) -> bool:
-        return self.label in ("product_bug", "docs_gap")
-
-
-def triage(transcript: str) -> TriageResult:
-    try:
-        raw = generate(
-            f"CONVERSATION:\n{transcript}",
-            system=_TRIAGE_RUBRIC,
-            model=config.UTILITY_MODEL,
-            temperature=0.0,
-            json_mode=True,
-        )
-        data = json.loads(raw)
-        label = data.get("label", "docs_gap")
-        if label not in ("docs_gap", "product_bug", "out_of_scope"):
-            label = "docs_gap"
-        return TriageResult(
-            label=label,  # type: ignore[arg-type]
-            confidence=float(data.get("confidence", 0.5)),
-            rationale=str(data.get("rationale", "")),
-        )
-    except (LLMError, QuotaError, json.JSONDecodeError, TypeError, ValueError):
-        # Safe default: treat as a docs gap so it still gets logged and queued.
-        return TriageResult("docs_gap", 0.0, "triage unavailable — defaulted")

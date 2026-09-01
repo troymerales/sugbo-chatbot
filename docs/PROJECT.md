@@ -42,7 +42,7 @@ chatbot/
 │   ├── knowledge.py              load docs → sections → system prompt
 │   ├── retrieval.py              RAG mode: embedding-cosine section retrieval  ← NEW
 │   ├── grounding.py              the verification pass
-│   ├── failure_capture.py        rule-based failure signals + triage
+│   ├── failure_capture.py        rule-based failure signals (no model call)
 │   ├── ticketing.py              draft a ticket from a conversation
 │   ├── jira_client.py            create Jira issues (outbound) + two batch reads
 │   ├── jira_dedup.py             embed a draft vs open tickets → duplicate check
@@ -72,7 +72,7 @@ chatbot/
 ├── scripts/                      llm_cache.py · jira_check.py · jira_test_ticket.py
 ├── web/index.html                SugboDoc dashboard mockup + floating chat widget
 ├── docs/                         PROJECT.md · SugboDoc-Chatbot-Flowchart.md · the knowledge base
-└── tests/                        pytest suite (runs fully offline, 53 tests)
+└── tests/                        pytest suite (runs fully offline, 62 tests)
 ```
 
 Each subdirectory is a package. Modules import each other as `from core import bot`,
@@ -181,19 +181,33 @@ Two jobs:
     wrong"
   *Rules first, model later:* a dissatisfaction classifier is only worth training once the
   logs show these rules missing failures.
-- **`triage(transcript) -> TriageResult`** — one model call: `docs_gap` | `product_bug` |
-  `out_of_scope`. Drives whether to offer a ticket and where the failure is filed.
+  *(An LLM `triage()` call — docs-gap / product-bug / out-of-scope — used to run here; it
+  was removed to cut per-conversation model cost.)*
 
-### `ticketing.py`
-`draft_ticket(transcript) -> TicketDraft(subject, category, summary)`. One model call that
-turns a failed conversation into a structured draft the user reviews before filing.
-Tracked metric (see eval): how often the draft is accepted with only minor edits.
+### `ticketing.py` — no model calls in the runtime
+- `default_draft(transcript) -> TicketDraft` — the ticket the user reviews, built with **no
+  model call**: subject seeds from the user's first question, summary is left blank.
+- `as_iso_date(text)` / `urgency_for_date(iso, today=?)` — validate the date picker's value
+  and derive an urgency (`high` ≤ 3 days out, `medium` ≤ 14, else `low`).
+- `draft_ticket()` (the LLM-drafted version) is kept in the file for reference but is no
+  longer wired in.
 
 ### `jira_client.py`
 - `create_issue(*, subject, category, summary, contact, transcript, question_count,
-  extra_labels=?) -> "KAN-12"` — the outbound write. Builds an Atlassian Document Format
-  (ADF) description via `_adf()` (one paragraph per line, blank line = spacer), attaches
-  labels (`sugbodoc-assistant`, the category, `triage-<label>`).
+  due_date=?, urgency=?, extra_labels=?) -> "KAN-12"` — the outbound write.
+  Builds an Atlassian Document Format (ADF) description via `_adf()` (one paragraph per
+  line, blank line = spacer) that also carries *Reporter email*, *Target date* and
+  *Requested urgency*. Fields on the payload: `project`, `summary`, `description`,
+  `issuetype`, `labels` (`sugbodoc-assistant`, category, `urgency-<level>`); `duedate`
+  (only when `due_date` matches `YYYY-MM-DD`); `reporter` (`{"id": accountId}`) when
+  `resolve_account_id(contact)` finds the email as a Jira user. **Graceful validation:**
+  on a 400 that names `reporter` / `duedate` / `priority` (field not on the create screen,
+  no *Modify Reporter* permission,
+  bad format), those keys are dropped and the create is retried once so the ticket still
+  files.
+- `resolve_account_id(email)` — `GET /rest/api/3/user/search`, best-effort, cached in
+  `_ACCOUNT_ID_CACHE`. Returns `None` for a non-Jira user (the normal case — the email is
+  still in the description).
 - `list_recent_open_issues()` / `list_resolved_issues()` — the **only** reads, both batch:
   the first for dedup, the second for the docs loop. `_search()` uses the v3 JQL endpoint
   with a fallback to the older `/search`.
@@ -270,12 +284,14 @@ same flow inline (it predates this module).
 - `ask(conv, text)` — appends turn, calls `bot.respond`, then routes to `feedback`,
   `offer_ticket` (on refusal or after N questions), else stays.
 - `feedback(conv, helpful)` — 👍 → appends *"Great — glad I could help!"*, `resolved` + log;
-  👎 → failure capture + triage.
+  👎 → rule-based failure capture, offer a ticket.
 - `tell_me_more(conv)` — back to `chat`.
-- `ticket_draft(conv)` — `ticketing.draft_ticket` + `jira_dedup.find_duplicate`.
-- `submit_ticket(...)` / `link_duplicate(conv)` — each appends its confirmation message and
-  returns a full `_state(conv)` (not a bare `{ticket_id}`), so the widget renders the reply
-  by the same message-diff path as everything else.
+- `ticket_draft(conv)` — `ticketing.default_draft` (no model call) + `jira_dedup.find_duplicate`.
+- `submit_ticket(conv, *, email, subject, summary, category, needed_by="")` — `needed_by` is
+  a `YYYY-MM-DD` from the UI date picker; `ticketing.as_iso_date` validates it →
+  `conv.due_date`, `ticketing.urgency_for_date` derives the urgency, and both go to
+  `create_issue` along with `contact=email`. `link_duplicate(conv)` likewise. Both append
+  their confirmation message and return a full `_state(conv)`.
 - `log_abandoned(conv)` / `_log(conv, outcome)` — writes the `ConversationRecord`.
 - `serialize(conv) -> dict` / `deserialize(dict) -> Conversation` — plain JSON-able form
   (chat history included) that `service.py` stores in the `conversations` table.
@@ -293,9 +309,9 @@ cp .env.example .env       # add GEMINI_API_KEY (+ JIRA_* to enable ticketing)
 streamlit run app.py
 #  or, with no key:   LLM_BACKEND=mock streamlit run app.py
 ```
-Sidebar shows what it's grounded on, the Jira target, the models, live triage + failure
-signals. Stage machine identical to `engine.py`; the ticket form is a modal
-(`@st.dialog`); every conversation is logged on a terminal state.
+Sidebar shows what it's grounded on, the Jira target, the models, live failure signals.
+Stage machine identical to `engine.py`; the ticket form is a modal (`@st.dialog`) with a
+date picker for the due date; every conversation is logged on a terminal state.
 
 ### B. FastAPI backend — `api/service.py`  (the "ship it to a website" path)
 ```
@@ -318,7 +334,15 @@ replies render as Markdown (`marked.js` + `DOMPurify`, both from cdnjs).
 
 The widget renders new turns by **diffing `state.messages`** against what it has already
 shown — so terminal replies like *"Great — glad I could help!"* (which carry no dedicated
-`reply` field) appear with no special-casing, matching exactly what gets logged.
+`reply` field) appear with no special-casing, matching exactly what gets logged. While a
+`/chat` or `/feedback` request is in flight a Messenger-style **three-dot "typing" bubble**
+shows at the bottom of the log.
+
+The **ticket form is a centred modal** (`openTicket()`): a full-viewport overlay dims and
+blurs the page (dashboard *and* widget), with the form card in the middle — close via `×`,
+Cancel, `Esc`, or a backdrop click. Submit disables the button ("Submitting…"), validates
+client-side, and on success dismisses the modal and drops back to the chat, which now shows
+the *"✅ Ticket … created"* confirmation.
 
 `GET /documentation` renders `docs/SugboDoc-Documentation.md` with a sticky left-hand
 section nav (built from `knowledge.content_sections()`, `##` + `###`, with scroll-spy) and
@@ -419,7 +443,7 @@ catch rate, repeat-question rate, triage mix, ticket categories.
 
 ## 7. Tests — `tests/`
 
-`pip install -r requirements-dev.txt && pytest`. 53 tests, **fully offline** (the
+`pip install -r requirements-dev.txt && pytest`. 62 tests, **fully offline** (the
 `conftest.py` fixture forces the mock backend and points every path — cache, chat log — at
 a `tmp_path`; the DB tests use a throwaway SQLite file, no server). Coverage:
 
@@ -427,10 +451,11 @@ a `tmp_path`; the DB tests use a throwaway SQLite file, no server). Coverage:
 |---|---|
 | `test_knowledge.py` | section parsing, TOC exclusion, `find_section`, system prompt contents |
 | `test_retrieval.py` | full-context vs RAG prompt, section ranking, bot answers + refuses with RAG on |
-| `test_failure_capture.py` | every rule signal, fuzzy repeat detection, triage label validity |
+| `test_failure_capture.py` | every rule signal, fuzzy repeat detection |
 | `test_chatlog.py` | JSONL round-trip, `.failed` / `.failed_user_questions()` |
 | `test_db.py` | chat-log round-trip via Postgres, `reset_store`, session persist/restore, `/healthz` store, drop-on-terminal |
-| `test_jira_client.py` | ADF structure, blank-line spacers, description fields |
+| `test_ticketing.py` | deterministic `default_draft`, `as_iso_date`, `urgency_for_date` |
+| `test_jira_client.py` | ADF structure, description fields, `duedate`/`reporter`/`urgency` mapping, drop-and-retry on a 400 |
 | `test_jira_dedup_and_kpis.py` | cosine properties, duplicate match, KPI run |
 | `test_llm.py` | cache hit-once, offline raises on miss / serves warm, `Chat` history, embed determinism |
 | `test_bot_and_grounding.py` | answer path, refusal path, verification short-circuit |
@@ -474,10 +499,10 @@ grounding, fine-tuning, TextTiling for doc segmentation.
 - **Failure analytics** (`analytics_cluster.py`) — embedding + **HDBSCAN** density
   clustering of failed questions, cluster labelling, an **impact score**
   (frequency × stuckness × recency), coverage-gap ranking.
-- **Generation-quality metrics** (`ticketing.py`, eval) — ticket-draft acceptance /
-  edit-distance rather than vibes.
-- **Cost engineering** (`llm.py`) — a request cache keyed by content hash, an offline mode,
-  a mock backend, quota-aware retry that stops cleanly.
+- **Cost engineering** (`llm.py`, `config.py`) — a request cache keyed by content hash, an
+  offline mode, a mock backend, quota-aware retry that stops cleanly, per-model overrides,
+  and a deliberately minimal per-turn call budget (answer + one verification pass; failure
+  triage and ticket drafting are rule-based / deterministic).
 - **Production shape** (`service.py`, `engine.py`) — UI-independent state machine, a JSON
   API, session-store abstraction, an integration (`jira_client.py`) against a real REST API
   with ADF payloads and team-managed-project quirks handled.
@@ -509,7 +534,7 @@ grounding, fine-tuning, TextTiling for doc segmentation.
 
 ```
 pip install -r requirements-dev.txt
-pytest                                        # 53 tests, offline, ~2s
+pytest                                        # 62 tests, offline, ~2s
 
 cp .env.example .env                          # add GEMINI_API_KEY
 python -m evaluation.eval_run --limit 10      # sanity-check the real model

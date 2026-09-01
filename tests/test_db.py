@@ -69,7 +69,7 @@ def test_conversation_persistence_round_trip(pg):
     conv.chat.history.append({"role": "user", "text": "hello"})
     conv.question_count = 1
     conv.stage = "feedback"
-    conv.triage = {"label": "docs_gap", "confidence": 0.5, "rationale": "x"}
+    conv.failure_signals = ["refused"]
 
     db.save_conversation(conversation_id=conv.id, stage=conv.stage,
                          started_at=conv.started_at, question_count=1,
@@ -81,7 +81,7 @@ def test_conversation_persistence_round_trip(pg):
     assert back.question_count == 1
     assert back.chat.history == [{"role": "user", "text": "hello"}]
     assert back.messages[-1]["content"] == "hello"
-    assert back.triage["label"] == "docs_gap"
+    assert back.failure_signals == ["refused"]
 
     assert db.count_conversations() == 1
     assert db.delete_conversation("conv-1") is True

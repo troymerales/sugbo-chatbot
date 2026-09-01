@@ -31,8 +31,9 @@ Two constraints drive every choice:
 1. **Highlight real data science skill — but stay honest.** No classical technique used just
    to show theory when a simpler or better modern tool wins. Section 8 lists what was
    deliberately *not* used and why.
-2. **Minimal / zero cost.** The LLM is **Google Gemini** on the free tier (answers, the
-   verification pass, triage, ticket drafts, the eval judge, and embeddings). Jira's REST
+2. **Minimal / zero cost.** The LLM is **Google Gemini** on the free tier. The per-turn
+   budget is deliberately just *answer + one verification pass*; failure triage and ticket
+   drafting were originally model calls but are now rule-based / deterministic. Jira's REST
    API is free with any account and is called only when a ticket is actually submitted.
    *Trade-off:* the free tier caps daily requests per model — the batch jobs (eval, cluster,
    docs loop) stop cleanly on a `QuotaError` and are meant to run in small passes or with
@@ -116,31 +117,27 @@ flowchart TD
         S3[User re-asks same thing<br/>2+ times] --> FAIL
         S4[User says 'wrong' / 'not helpful'] --> FAIL
     end
-    FAIL[Flag conversation as failed] --> TRIAGE{What kind of gap?}
-    TRIAGE -->|missing / unclear docs| Q[(Doc-gap queue)]
-    TRIAGE -->|product bug / broken feature| ASK[Prompt user:<br/>'Want to submit a ticket?']
-    TRIAGE -->|out of scope| HUMAN[Route to human support]
+    FAIL[Flag conversation as failed] --> Q[(Doc-gap queue)]
+    FAIL --> ASK[Offer the user a ticket]
     ASK -->|yes| GEN[Ticket generation — §3]
     ASK -->|no| Q
-    GEN --> Q
 
     style FAIL fill:#2b6cb0,stroke:#1a365d,color:#fff
-    style TRIAGE fill:#2b6cb0,stroke:#1a365d,color:#fff
 ```
 
-**Detection: rules first, model later.** The two strong signals — the bot's own refusal and
-a thumbs-down — need no ML and cover most cases. Add the softer signals (repeated re-asking,
-negative follow-up) as rules too. Only train a dissatisfaction classifier once the logs have
-a few hundred labelled conversations *and* the rules are visibly missing failures.
+**Detection: rules only.** The strong signals — the bot's own refusal and a thumbs-down —
+need no ML and cover most cases; the softer ones (repeated re-asking, "not helpful"
+phrasing) are rules too. Only train a dissatisfaction classifier once the logs have a few
+hundred labelled conversations *and* the rules are visibly missing failures.
 
-**Triage** is a single Gemini call ("is this a docs gap, a product bug, or out of
-scope?") over the conversation — measured on the eval set like everything else. Every failed
-chat lands in the doc-gap queue regardless; the ticket is an extra branch.
+**Triage was removed.** An LLM triage call (docs-gap / product-bug / out-of-scope) used to
+run on every failed chat; it was cut to keep per-conversation model cost to *answer + one
+verification pass*. Every failed chat still lands in the doc-gap queue; the ticket is an
+extra branch.
 
 **Data science work here**
 
 - Failure-signal design and precision/recall of each signal against human-labelled chats
-- Triage classification quality (confusion matrix: docs-gap vs bug vs out-of-scope)
 - Deciding when the rules stop being enough (missed-failure rate over time)
 
 ---
@@ -149,16 +146,14 @@ chat lands in the doc-gap queue regardless; the ticket is an extra branch.
 
 ```mermaid
 flowchart TD
-    C[Failed conversation<br/>+ user said yes] --> DRAFT[Gemini drafts ticket:<br/>title, description, steps,<br/>docs consulted, suggested issuetype]
+    C[Failed conversation<br/>+ user said yes] --> DRAFT[Default draft — no model call:<br/>subject = first question]
     DRAFT --> DEDUP[Check recent open tickets<br/>embed + cosine similarity<br/>the ONE time Jira is read]
-    DEDUP -->|near-duplicate exists| LINK[Show user the existing ticket<br/>optionally add a comment]
-    DEDUP -->|new| REVIEW[User / support reviews the draft]
-    REVIEW -->|approve| CREATE[POST to Jira REST API]
-    REVIEW -->|edit| CREATE
+    DEDUP -->|near-duplicate exists| LINK[Show user the existing ticket]
+    DEDUP -->|new| REVIEW[User fills email, subject, summary<br/>+ picks a due date]
+    REVIEW --> CREATE["POST /rest/api/3/issue<br/>+ reporter (from email), duedate,<br/>urgency label · drop-and-retry on 400"]
     CREATE --> ID[Return ticket ID to user]
-    ID --> LOG[(Log: draft, edits, ticket ID)]
+    ID --> LOG[(Log: ticket ID, due_date)]
 
-    style DRAFT fill:#2b6cb0,stroke:#1a365d,color:#fff
     style DEDUP fill:#2b6cb0,stroke:#1a365d,color:#fff
 ```
 
@@ -166,12 +161,13 @@ flowchart TD
 not per request. Pull the last ~100 open tickets, embed their summaries, compare to the
 draft. Stops the queue filling with ten copies of the same bug.
 
+The ticket draft was an LLM call; it's now a deterministic default (subject from the user's
+first question, summary left to the user) to save cost. The due date comes from a date
+picker — no free-text parsing — and urgency is derived from how soon it is.
+
 **Data science work here**
 
-- Ticket-draft quality: track **human edit distance** and **acceptance rate** — is the LLM
-  draft good enough to approve with minor edits? This is a measurable generation-quality metric.
 - Duplicate-detection threshold tuning (precision/recall of "this is a dup")
-- Suggested-issuetype accuracy vs. what the reviewer picks
 
 ---
 
@@ -393,9 +389,9 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `core/retrieval.py` | `USE_RAG` mode: embed sections (`llm.embed`) + cosine rank → top-K | §0 |
 | `core/bot.py` | `respond()` — the one answer path: (RAG re-ground) → answer model → verification → refuse-or-answer | §1 |
 | `core/grounding.py` | The verification pass (`verify()` → `GroundingVerdict`), always vs full docs | §1 |
-| `core/failure_capture.py` | Rule-based `detect_failures()` + model `triage()` | §2 |
-| `core/ticketing.py` | `draft_ticket()` — conversation → `{subject, category, summary}` | §3 |
-| `core/jira_client.py` | Outbound `create_issue()`; batch reads `list_recent_open_issues` / `list_resolved_issues` | §3, §4 |
+| `core/failure_capture.py` | Rule-based `detect_failures()` (no model call — triage was removed for cost) | §2 |
+| `core/ticketing.py` | `default_draft()` (no model call — subject = first question), `as_iso_date()` / `urgency_for_date()` for the due-date picker | §3 |
+| `core/jira_client.py` | Outbound `create_issue()` — ADF description, `labels`, `duedate` (from a date picker), `reporter` (resolved from the user's email via `resolve_account_id`), drop-and-retry if Jira rejects an optional field; batch reads `list_recent_open_issues` / `list_resolved_issues` | §3, §4 |
 | `core/jira_dedup.py` | `find_duplicate()` — embed draft vs open tickets, cosine (the one Jira read) | §3 |
 | `core/chatlog.py` | Append/load finished conversations — `logs/chats.jsonl`, or the `chat_logs` table when `DATABASE_URL` is set; + `logs/chats.csv` mirror | feeds §6, §7 |
 | `api/db.py` | SQLAlchemy engine + `conversations` / `chat_logs` models — opt-in Postgres persistence for `api/service.py` | §1–§3 |
@@ -419,7 +415,7 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `python -m scripts.llm_cache` | Inspect / `--clear` the response cache | — |
 | `python -m core.chatlog` | Rebuild `logs/chats.csv` from the primary store (a flat CSV mirror is also written on every log) | — |
 | `python -m scripts.jira_check` | Standalone connectivity + createmeta field check (`--create-test` files a throwaway) | setup |
-| `pytest` | 53 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
+| `pytest` | 62 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
 
 ### Data files
 
@@ -461,7 +457,7 @@ flowchart LR
 
 ```
 pip install -r requirements-dev.txt
-pytest                                   # 53 offline tests (~2s)
+pytest                                   # 62 offline tests (~2s)
 
 cp .env.example .env                     # add GEMINI_API_KEY (+ JIRA_* for ticketing)
 streamlit run app.py                     #  or:  LLM_BACKEND=mock streamlit run app.py

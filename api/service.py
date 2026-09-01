@@ -143,6 +143,7 @@ class TicketIn(BaseModel):
     subject: str
     summary: str
     category: str = "Other"
+    needed_by: str = ""          # "when do you need this?" — YYYY-MM-DD from the date picker, or ""
 
 
 # --------------------------------------------------------------------------- #
@@ -208,6 +209,7 @@ def ticket(body: TicketIn) -> dict:
         return engine.submit_ticket(
             conv, email=body.email.strip(), subject=body.subject.strip(),
             summary=body.summary.strip(), category=body.category,
+            needed_by=body.needed_by.strip(),
         )
     except RuntimeError as exc:
         raise HTTPException(400, str(exc))

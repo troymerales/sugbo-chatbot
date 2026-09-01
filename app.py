@@ -8,10 +8,10 @@ The full inference path from the architecture doc:
     -> verification pass (independent model call: is every claim in the docs?)
     -> grounded answer, or the canonical refusal
   feedback loop ("did that help?")
-    -> failure capture (rule-based signals) + triage (docs gap / bug / scope)
+    -> rule-based failure capture
     -> offer a ticket
   ticket
-    -> AI draft -> dedup against open Jira issues -> user review -> Jira REST create
+    -> deterministic draft -> dedup against open Jira issues -> user review -> Jira REST create
   every conversation is logged to logs/chats.jsonl for the eval + analytics jobs.
 
 Run:
@@ -55,7 +55,6 @@ def init_state() -> None:
     ss.setdefault("stage", "chat")            # chat | feedback | offer_ticket | done
     ss.setdefault("grounding_checks", [])
     ss.setdefault("failure_signals", [])
-    ss.setdefault("triage", None)             # dict | None
     ss.setdefault("thumbs", None)             # "up" | "down" | None
     ss.setdefault("last_ticket_id", None)
     ss.setdefault("duplicate_of", None)
@@ -68,9 +67,9 @@ def reset_conversation(*, log_abandoned: bool = True) -> None:
         _log_conversation("abandoned")
     for key in (
         "conversation_id", "started_at", "messages", "question_count", "stage",
-        "grounding_checks", "failure_signals", "triage", "thumbs",
+        "grounding_checks", "failure_signals", "thumbs",
         "last_ticket_id", "duplicate_of", "logged", "chat", "ticket_draft",
-        "open_ticket_dialog", "dup_dismissed",
+        "open_ticket_dialog", "dup_dismissed", "needed_by", "due_date",
     ):
         ss.pop(key, None)
 
@@ -84,7 +83,6 @@ def transcript_text() -> str:
 
 def _log_conversation(outcome: str) -> None:
     ss = st.session_state
-    tri = ss.get("triage") or {}
     record = chatlog.ConversationRecord(
         conversation_id=ss["conversation_id"],
         started_at=ss["started_at"],
@@ -94,12 +92,12 @@ def _log_conversation(outcome: str) -> None:
         messages=list(ss["messages"]),
         failure_signals=sorted(set(ss.get("failure_signals", []))),
         grounding_checks=list(ss.get("grounding_checks", [])),
-        triage_label=tri.get("label"),
-        triage_confidence=tri.get("confidence"),
         thumbs=ss.get("thumbs"),
         ticket_id=ss.get("last_ticket_id"),
         ticket_category=(ss.get("ticket_draft") or (None, None, None))[1]
         if ss.get("last_ticket_id") else None,
+        needed_by=ss.get("needed_by"),
+        due_date=ss.get("due_date"),
         duplicate_of=(ss.get("duplicate_of") or {}).get("key"),
     )
     chatlog.append(record)
@@ -126,20 +124,12 @@ def handle_question(text: str) -> None:
 
 
 def _enter_failure(*, grounding_failed: bool = False, thumbs_down: bool = False) -> None:
-    """Compute failure signals + triage, then move to the ticket offer."""
+    """Compute rule-based failure signals, then move to the ticket offer."""
     ss = st.session_state
     signals = failure_capture.detect_failures(
         ss.messages, thumbs_down=thumbs_down, grounding_failed=grounding_failed
     )
     ss.failure_signals = sorted(set(ss.failure_signals) | set(signals.as_list()))
-
-    if ss.get("triage") is None or thumbs_down:
-        tri = failure_capture.triage(transcript_text())
-        ss.triage = {
-            "label": tri.label,
-            "confidence": round(tri.confidence, 2),
-            "rationale": tri.rationale,
-        }
     ss.stage = "offer_ticket"
 
 
@@ -162,8 +152,8 @@ def ticket_dialog() -> None:
         return
 
     if "ticket_draft" not in ss:
-        with st.spinner("Drafting a ticket from the conversation…"):
-            draft = ticketing.draft_ticket(transcript_text())
+        with st.spinner("Preparing the ticket…"):
+            draft = ticketing.default_draft(transcript_text())   # no model call
             ss.ticket_draft = (draft.subject, draft.category, draft.summary)
             ss.duplicate_of = None
             dup = jira_dedup.find_duplicate(draft.subject, draft.summary)
@@ -209,6 +199,10 @@ def ticket_dialog() -> None:
             "Summary", value=draft_summary, height=170,
             help="Edit freely — add anything that helps the team reproduce it.",
         )
+        needed_date = st.date_input(
+            "When do you need this? (optional)", value=None,
+            help="Sets the ticket's due date; urgency is derived from how soon it is.",
+        )
         col_submit, col_cancel = st.columns(2)
         submitted = col_submit.form_submit_button("Submit to Jira", use_container_width=True)
         cancelled = col_cancel.form_submit_button("Cancel", use_container_width=True)
@@ -222,9 +216,10 @@ def ticket_dialog() -> None:
         if not (email.strip() and subject.strip() and summary.strip()):
             st.error("Please fill in email, subject, and summary.")
             return
+        due_date = needed_date.isoformat() if needed_date else None
+        urgency = ticketing.urgency_for_date(due_date)
         try:
             with st.spinner("Creating the Jira issue…"):
-                tri_label = (ss.get("triage") or {}).get("label", "")
                 key = jira_client.create_issue(
                     subject=subject.strip(),
                     category=draft_category,
@@ -232,7 +227,8 @@ def ticket_dialog() -> None:
                     contact=email.strip(),
                     transcript=transcript_text(),
                     question_count=ss.question_count,
-                    extra_labels=[f"triage-{tri_label}"] if tri_label else None,
+                    due_date=due_date,
+                    urgency=urgency,
                 )
         except Exception as exc:  # noqa: BLE001
             st.error(f"Couldn't create the Jira issue:\n\n{exc}")
@@ -240,12 +236,15 @@ def ticket_dialog() -> None:
 
         ss.last_ticket_id = key
         ss.ticket_draft = (subject.strip(), draft_category, summary.strip())
+        ss["needed_by"] = due_date
+        ss["due_date"] = due_date
         ss.pop("dup_dismissed", None)
+        _when = f"\n\n**Target date:** {due_date}" if due_date else ""
         ss.messages.append({
             "role": "assistant",
             "content": (
                 f"✅ Ticket **[{key}]({jira_client.browse_url(key)})** created in Jira.\n\n"
-                f"**Subject:** {subject.strip()}\n\n"
+                f"**Subject:** {subject.strip()}{_when}\n\n"
                 f"Our team will follow up at **{email.strip()}**."
             ),
         })
@@ -282,9 +281,6 @@ with st.sidebar:
         st.error("Set `GEMINI_API_KEY` in `.env` (or run with `LLM_BACKEND=mock`).")
 
     st.metric("Questions this chat", st.session_state.question_count)
-    tri = st.session_state.get("triage")
-    if tri:
-        st.caption(f"🔎 triage: **{tri['label']}** ({tri['confidence']})")
     if st.session_state.get("failure_signals"):
         st.caption("⚠️ signals: " + ", ".join(st.session_state["failure_signals"]))
 
@@ -343,12 +339,8 @@ elif stage == "feedback":
 
 elif stage == "offer_ticket":
     taking_long = st.session_state.question_count >= config.QUESTIONS_BEFORE_TICKET
-    label = (st.session_state.get("triage") or {}).get("label", "docs_gap")
     with st.chat_message("assistant"):
-        if label == "out_of_scope":
-            st.info("This looks outside what SugboDoc support covers. I can still "
-                    "log a ticket so a person can point you the right way.")
-        elif taking_long:
+        if taking_long:
             st.warning("This is taking a while to solve. Want to submit a ticket, "
                        "or tell me more?")
         else:
