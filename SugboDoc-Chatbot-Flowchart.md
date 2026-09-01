@@ -31,8 +31,15 @@ Two constraints drive every choice:
 1. **Highlight real data science skill — but stay honest.** No classical technique used just
    to show theory when a simpler or better modern tool wins. Section 8 lists what was
    deliberately *not* used and why.
-2. **Minimal / zero cost.** The LLM is **Ollama**, local. Jira's REST API is free with any
-   account and is called only when a ticket is actually submitted.
+2. **Minimal / zero cost.** The LLM is **Google Gemini** on the free tier (answers, the
+   verification pass, triage, ticket drafts, the eval judge, and embeddings). Jira's REST
+   API is free with any account and is called only when a ticket is actually submitted.
+   *Trade-off:* the free tier caps daily requests per model — the batch jobs (eval, cluster,
+   docs loop) stop cleanly on a `QuotaError` and are meant to run in small passes or with
+   billing enabled. Swapping in local Ollama is a one-file change in `llm.py`.
+
+> **As built:** this document is the design rationale. Section 12 maps every stage below to
+> the module that implements it, with the command to run it.
 
 ---
 
@@ -48,7 +55,7 @@ flowchart TD
     Q[How big are the docs?] --> A{Fit comfortably in<br/>the model context?}
     A -->|yes — today| F1[Full doc in prompt<br/>no retrieval]
     A -->|later, if docs 5–10x| F2[Add section-level retrieval<br/>BM25 + local embeddings]
-    F1 --> GEN[Ollama — grounded answer]
+    F1 --> GEN[Gemini — grounded answer]
     F2 --> GEN
     GEN --> EVAL[Evaluation harness<br/>unchanged either way]
 
@@ -68,8 +75,8 @@ doc work. Those are §2, §3, §6, §7.
 flowchart TD
     U[User question] --> H[Prepend last few turns]
     H --> P[Prompt = full docs<br/>+ answer rules + question]
-    P --> GEN[Ollama — mid model<br/>answer + cite section]
-    GEN --> VER[Verification pass<br/>Ollama — small model:<br/>is every sentence in the docs?]
+    P --> GEN[Gemini answer model<br/>answer + cite section]
+    GEN --> VER[Verification pass<br/>Gemini utility model:<br/>is every sentence in the docs?]
     VER -->|supported| ANS[Answer + section link]
     VER -->|unsupported / no basis| REFUSE["I don't have enough<br/>information in my records"]
     ANS --> FB[Ask: was this helpful?]
@@ -85,8 +92,8 @@ flowchart TD
 ```
 
 **Why a separate verification pass** — small local models are weak at self-policing "I don't
-know". A second cheap Ollama call that checks the draft answer against the docs catches
-hallucinations a frontier model would catch inline. Tune its strictness on the eval set (§6).
+know". A second, independent Gemini call that checks the draft answer against the docs catches
+hallucinations a frontier model would catch inline. Tune its strictness on the eval set (§6). Implemented in `grounding.py`.
 
 **Data science work here**
 
@@ -123,7 +130,7 @@ a thumbs-down — need no ML and cover most cases. Add the softer signals (repea
 negative follow-up) as rules too. Only train a dissatisfaction classifier once the logs have
 a few hundred labelled conversations *and* the rules are visibly missing failures.
 
-**Triage** can be a single Ollama call ("is this a docs gap, a product bug, or out of
+**Triage** is a single Gemini call ("is this a docs gap, a product bug, or out of
 scope?") over the conversation — measured on the eval set like everything else. Every failed
 chat lands in the doc-gap queue regardless; the ticket is an extra branch.
 
@@ -139,7 +146,7 @@ chat lands in the doc-gap queue regardless; the ticket is an extra branch.
 
 ```mermaid
 flowchart TD
-    C[Failed conversation<br/>+ user said yes] --> DRAFT[Ollama drafts ticket:<br/>title, description, steps,<br/>docs consulted, suggested issuetype]
+    C[Failed conversation<br/>+ user said yes] --> DRAFT[Gemini drafts ticket:<br/>title, description, steps,<br/>docs consulted, suggested issuetype]
     DRAFT --> DEDUP[Check recent open tickets<br/>embed + cosine similarity<br/>the ONE time Jira is read]
     DEDUP -->|near-duplicate exists| LINK[Show user the existing ticket<br/>optionally add a comment]
     DEDUP -->|new| REVIEW[User / support reviews the draft]
@@ -173,7 +180,7 @@ flowchart TD
     CLUS --> RANK[Rank clusters<br/>frequency x how-stuck-the-user-was]
     JIRA[Resolved Jira tickets<br/>bugs fixed / features shipped] --> RANK
     RANK --> PICK[Pick the top gaps this cycle]
-    PICK --> DRAFT[Ollama drafts the doc change<br/>grounded in the failed chats + ticket]
+    PICK --> DRAFT[Gemini drafts the doc change<br/>grounded in the failed chats + ticket]
     DRAFT --> HUMAN[Human reviews & edits]
     HUMAN --> MERGE[Update SugboDoc-Documentation.md]
     MERGE --> RESCORE[Re-run eval harness]
@@ -236,7 +243,7 @@ flowchart TD
     ES --> A4[Ticket-draft quality<br/>edit distance, acceptance rate]
     ES --> A5[Triage accuracy<br/>docs-gap vs bug vs out-of-scope]
 
-    A1 --> J[LLM-as-judge<br/>largest local model, NOT the answer model<br/>+ rubric]
+    A1 --> J[LLM-as-judge<br/>gemini-2.5-pro, NOT the answer model<br/>+ rubric]
     A2 --> J
     A3 --> J
     J --> CAL[Calibrate vs 40–60 human labels<br/>report Cohen's kappa]
@@ -258,14 +265,12 @@ flowchart TD
   is only as good as its test set
 - Generation-quality metrics that aren't just vibes: **ticket-draft edit distance and
   acceptance rate**, refusal precision/recall
-- LLM-as-judge done properly — rubric, calibration against human labels, Cohen's κ. **A
-  local judge is a weaker judge**: expect lower κ, keep a fixed 40–60 question human panel
-  per release, use the biggest model you can load for judging
+- LLM-as-judge done properly — rubric, calibration against human labels, Cohen's κ. Use a **different, stronger** model than the answer model for judging (here `gemini-2.5-pro` judging a `gemini-3.6-flash` answerer); keep a fixed 40–60 question human panel per release and report Cohen's κ
 - Config comparison with **bootstrap confidence intervals**; multiple-comparison awareness
 - Frozen scorecard re-run on every prompt / docs change
 
-**Zero cost:** [`promptfoo`](https://www.promptfoo.dev/) (native Ollama provider) or a
-~150-line Python harness against the local Ollama API; human labels in a spreadsheet.
+**Zero cost:** the custom harness in `eval_run.py` (deterministic checks + LLM-judge +
+bootstrap CIs + `--calibrate` for Cohen's κ); human labels in a CSV.
 
 ---
 
@@ -273,7 +278,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    LOG[(Chat logs)] --> EMB[Embed failed questions<br/>local model]
+    LOG[(Chat logs)] --> EMB[Embed failed questions<br/>Gemini embeddings]
     EMB --> CLU[Cluster — HDBSCAN]
     CLU --> LBL[Label clusters = real unmet needs]
     LBL --> IMP[Impact score<br/>frequency x severity x recency]
@@ -364,6 +369,109 @@ every later change is judged against the frozen scorecard.
 The strongest signal is §6 and §8: a rigorous evaluation harness, and the discipline to keep
 the inference path trivial and put the intelligence into the feedback loop that improves the
 docs.
+
+---
+
+## 12. As built — file map
+
+Every stage above is implemented. Flat module layout so imports "just work" on Windows.
+**`PROJECT.md` is the detailed walkthrough** (every file + key functions); this is the index.
+
+### Core library (imported by everything)
+
+| File | Responsibility | Stage |
+|---|---|---|
+| `config.py` | Paths, model names, thresholds, backend switches, one-time `.env` load | — |
+| `llm.py` | The one model interface: `generate`, `new_chat`/`Chat.send`, `embed`; SQLite response cache; offline mode; quota-aware `retry` + `QuotaError` | — |
+| `_gemini_backend.py` | Real Gemini SDK calls (lazy-imported by `llm.py`) | — |
+| `_mock_backend.py` | Offline deterministic stand-in — no API key / quota | — |
+| `knowledge.py` | Load docs, split into 60+ `Section`s, assemble the system prompt | §0, §5 |
+| `bot.py` | `respond()` — the one answer path: answer model → verification → refuse-or-answer | §1 |
+| `grounding.py` | The verification pass (`verify()` → `GroundingVerdict`) | §1 |
+| `failure_capture.py` | Rule-based `detect_failures()` + model `triage()` | §2 |
+| `ticketing.py` | `draft_ticket()` — conversation → `{subject, category, summary}` | §3 |
+| `jira_client.py` | Outbound `create_issue()`; batch reads `list_recent_open_issues` / `list_resolved_issues` | §3, §4 |
+| `jira_dedup.py` | `find_duplicate()` — embed draft vs open tickets, cosine (the one Jira read) | §3 |
+| `chatlog.py` | Append/load `logs/chats.jsonl` — one record per finished conversation | feeds §6, §7 |
+| `engine.py` | UI-independent conversation state machine (`chat → feedback → offer_ticket → done`) | §1–§3 |
+| `cli.py` | Shared `--mock` / `--offline` / `--no-cache` flags for the batch scripts | — |
+
+### Entry points
+
+| Command | What it does | Stage |
+|---|---|---|
+| `streamlit run app.py` | Streamlit demo UI: full inference path + feedback loop + modal ticket flow + logging | §1–§3 |
+| `uvicorn service:app` | FastAPI backend (JSON API + bundled `web/index.html` widget) — the "ship to a website" path | §1–§3 |
+| `python eval_run.py` | Run the pipeline over `eval_set.jsonl`, LLM-judge, write `eval_scorecard.md/.json` (bootstrap CIs). `--calibrate` → Cohen's κ; `--no-judge` / `--mock` / `--offline` | §6 |
+| `python eval_gen.py` | Draft synthetic eval questions from each doc section → `eval_generated.jsonl` (review before merging) | §6 |
+| `python analytics_kpis.py` | Containment / thumbs / refusal / repeat-question KPIs from the log (no model calls) | §7 |
+| `python analytics_cluster.py` | Embed failed questions → HDBSCAN → label → impact score → `logs/doc_gap_queue.json` | §7 |
+| `python docs_loop.py` | Top gaps + resolved Jira → model drafts a doc change → `doc_proposals/` | §4 |
+| `python seed_demo_log.py` | Write synthetic conversations so the analytics/loop scripts are demoable with no traffic | — |
+| `python llm_cache.py` | Inspect / `--clear` the response cache | — |
+| `python jira_check.py` | Standalone connectivity + createmeta field check (`--create-test` files a throwaway) | setup |
+| `pytest` | 40 offline tests (mock backend, tmp paths) | — |
+
+### Data files
+
+| File | Tracked? | Notes |
+|---|---|---|
+| `SugboDoc-Documentation.md` | gitignored | the single source of truth |
+| `system-prompt.md` | gitignored | original prompt (see note below) |
+| `eval_set.jsonl` | yes | 90 hand-authored cases; 61 answerable + 29 must-refuse |
+| `eval_scorecard.md` | yes | committed baseline — diff it on every prompt/docs change (marks the backend; a `mock` card is a plumbing check, not a score) |
+| `eval_scorecard.json` | gitignored | machine-readable scorecard + per-case detail |
+| `web/index.html` | yes | the demo chat widget `service.py` serves |
+| `logs/chats.jsonl` | gitignored | append-only conversation log |
+| `logs/llm_cache.sqlite` | gitignored | response cache (warm it once, then `--offline`) |
+| `logs/doc_gap_queue.json` | gitignored | impact-ranked output of `analytics_cluster.py` |
+| `doc_proposals/*.md` | gitignored | draft doc changes for human review |
+
+### The loop, end to end
+
+```mermaid
+flowchart LR
+    APP[app.py] -->|every conversation| LOG[(logs/chats.jsonl)]
+    LOG --> KPI[analytics_kpis.py]
+    LOG --> CLU[analytics_cluster.py] --> Q[(doc_gap_queue.json)]
+    JIRA[resolved Jira issues] --> DL[docs_loop.py]
+    Q --> DL --> PROP[doc_proposals/*.md]
+    PROP -->|human edits + merges| DOCS[(SugboDoc-Documentation.md)]
+    DOCS --> EVAL[eval_run.py] --> CARD[(eval_scorecard.md)]
+    CARD -->|no regression| DOCS
+    DOCS --> APP
+
+    style CLU fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style EVAL fill:#2b6cb0,stroke:#1a365d,color:#fff
+    style DL fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+### First run
+
+```
+pip install -r requirements-dev.txt
+pytest                              # 40 offline tests (~1s)
+
+cp .env.example .env                # add GEMINI_API_KEY (+ JIRA_* for ticketing)
+streamlit run app.py               #  or:  LLM_BACKEND=mock streamlit run app.py
+
+# offline demo of the maintenance side (no API needed with --mock):
+python seed_demo_log.py
+python analytics_kpis.py
+python analytics_cluster.py --mock
+python docs_loop.py --mock
+
+# the JSON backend for embedding in a website:
+pip install -r requirements-service.txt
+uvicorn service:app --reload        #  http://127.0.0.1:8000
+```
+
+**Free-tier note:** Gemini caps requests/day per model. `eval_run.py` is ~2 calls/case
+(≈180 for the full 90-case set); run it with `--limit`, `--no-judge`, enable billing, or
+point `GEMINI_MODEL` / `GEMINI_JUDGE_MODEL` at models that still have quota. Every response
+is cached to `logs/llm_cache.sqlite`, so a second run of the same config is free — and
+`--offline` will then serve entirely from that cache. Every batch script stops cleanly on
+`QuotaError` (the eval writes a partial scorecard). `--mock` skips the API entirely.
 
 ---
 

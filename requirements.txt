@@ -1,4 +1,13 @@
+# runtime bot (Streamlit demo)
 streamlit>=1.37
-google-genai>=0.3
+google-genai>=1.0
 python-dotenv>=1.0
 requests>=2.31
+
+# analytics / failure clustering (analytics_cluster.py)
+numpy>=1.26
+scikit-learn>=1.3
+
+# optional: the FastAPI backend (service.py). Not needed for the Streamlit app.
+# fastapi>=0.110
+# uvicorn>=0.29

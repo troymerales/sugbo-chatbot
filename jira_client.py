@@ -1,9 +1,10 @@
 """
-Jira ticket creation for the SugboDoc assistant.
+Jira integration for the SugboDoc assistant.
 
-Outbound only — the assistant never reads from Jira. Shared by app.py and the
-standalone test scripts so the ticket-creation path is exercised the same way
-everywhere.
+Mostly outbound: the bot creates tickets, it does not answer from them. The only
+reads are (a) dedup — pulling recent open issues to compare against a draft, and
+(b) the docs loop — pulling recently resolved issues that might have outdated a
+doc. Both are batch, never per-turn. See §3 / §4 of the architecture doc.
 """
 
 from __future__ import annotations
@@ -11,9 +12,8 @@ from __future__ import annotations
 import os
 
 import requests
-from dotenv import load_dotenv
 
-load_dotenv(override=True)
+import config  # loads .env
 
 JIRA_BASE_URL = os.environ.get("JIRA_BASE_URL", "").rstrip("/")
 JIRA_EMAIL = os.environ.get("JIRA_EMAIL", "")
@@ -29,15 +29,24 @@ def jira_configured() -> bool:
     return all((JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY))
 
 
+def browse_url(key: str) -> str:
+    return f"{JIRA_BASE_URL}/browse/{key}"
+
+
+# --------------------------------------------------------------------------- #
+# Create
+# --------------------------------------------------------------------------- #
+
 def _adf(text: str) -> dict:
-    """Minimal Atlassian Document Format: one paragraph per line, blank line -> spacer."""
-    paras = []
-    for line in (raw.rstrip() for raw in text.split("\n")):
+    """Minimal Atlassian Document Format: one paragraph per line, blank = spacer."""
+    paras: list[dict] = []
+    for raw in text.split("\n"):
+        line = raw.rstrip()
         if line:
             paras.append({"type": "paragraph",
                           "content": [{"type": "text", "text": line}]})
         else:
-            paras.append({"type": "paragraph"})  # empty line = visual gap
+            paras.append({"type": "paragraph"})
     if not any(p.get("content") for p in paras):
         paras = [{"type": "paragraph",
                   "content": [{"type": "text", "text": "(no details)"}]}]
@@ -64,9 +73,11 @@ def create_issue(
     contact: str,
     transcript: str,
     question_count: int,
+    extra_labels: list[str] | None = None,
 ) -> str:
     """Create a Jira issue and return its key (e.g. 'KAN-12')."""
     label_cat = category.lower().replace("/", "-").replace(" ", "-") or "other"
+    labels = ["sugbodoc-assistant", label_cat, *(extra_labels or [])]
     payload = {
         "fields": {
             "project": {"key": JIRA_PROJECT_KEY},
@@ -75,7 +86,7 @@ def create_issue(
                 build_description(summary, category, contact, question_count, transcript)
             ),
             "issuetype": {"name": JIRA_ISSUE_TYPE},
-            "labels": ["sugbodoc-assistant", label_cat],
+            "labels": labels,
         }
     }
     resp = requests.post(
@@ -87,5 +98,66 @@ def create_issue(
     return resp.json()["key"]
 
 
-def browse_url(key: str) -> str:
-    return f"{JIRA_BASE_URL}/browse/{key}"
+# --------------------------------------------------------------------------- #
+# Batch reads (dedup + docs loop only)
+# --------------------------------------------------------------------------- #
+
+def _search(jql: str, *, fields: list[str], max_results: int = 100) -> list[dict]:
+    resp = requests.get(
+        f"{JIRA_BASE_URL}/rest/api/3/search/jql",
+        params={"jql": jql, "fields": ",".join(fields), "maxResults": max_results},
+        auth=_AUTH, headers=_HEADERS, timeout=30,
+    )
+    if resp.status_code == 404:
+        # Older Cloud sites still use the /search endpoint.
+        resp = requests.get(
+            f"{JIRA_BASE_URL}/rest/api/3/search",
+            params={"jql": jql, "fields": ",".join(fields), "maxResults": max_results},
+            auth=_AUTH, headers=_HEADERS, timeout=30,
+        )
+    if resp.status_code >= 300:
+        raise RuntimeError(f"Jira search {resp.status_code}: {resp.text[:400]}")
+    return resp.json().get("issues", [])
+
+
+def _plain_text_from_adf(node: dict | None) -> str:
+    if not node:
+        return ""
+    if node.get("type") == "text":
+        return node.get("text", "")
+    return "".join(_plain_text_from_adf(c) for c in node.get("content", []) or [])
+
+
+def list_recent_open_issues(days: int = 30, limit: int = 100) -> list[dict]:
+    """[{key, summary, description}] — open assistant-filed issues, newest first."""
+    jql = (
+        f'project = "{JIRA_PROJECT_KEY}" AND labels = "sugbodoc-assistant" '
+        f'AND statusCategory != Done AND created >= -{days}d ORDER BY created DESC'
+    )
+    issues = _search(jql, fields=["summary", "description"], max_results=limit)
+    return [
+        {
+            "key": it["key"],
+            "summary": it["fields"].get("summary", ""),
+            "description": _plain_text_from_adf(it["fields"].get("description")),
+        }
+        for it in issues
+    ]
+
+
+def list_resolved_issues(days: int = 30, limit: int = 100) -> list[dict]:
+    """[{key, summary, description, resolved}] — recently resolved issues."""
+    jql = (
+        f'project = "{JIRA_PROJECT_KEY}" AND statusCategory = Done '
+        f'AND resolved >= -{days}d ORDER BY resolved DESC'
+    )
+    issues = _search(jql, fields=["summary", "description", "resolutiondate"], max_results=limit)
+    return [
+        {
+            "key": it["key"],
+            "summary": it["fields"].get("summary", ""),
+            "description": _plain_text_from_adf(it["fields"].get("description")),
+            "resolved": it["fields"].get("resolutiondate", ""),
+        }
+        for it in issues
+    ]

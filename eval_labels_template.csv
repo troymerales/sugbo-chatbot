@@ -1,0 +1,8 @@
+id,human_correct,note
+# Fill human_correct with 1 (answer/refusal is acceptable) or 0 (not acceptable).
+# Label 40-60 cases, then: python eval_run.py --calibrate eval_labels_template.csv
+# The run prints raw agreement + Cohen's kappa between you and JUDGE_MODEL.
+ans-void-payment,,
+ans-rx-new-med,,
+refuse-delete-patient,,
+refuse-refund-process,,

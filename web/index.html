@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SugboDoc Support</title>
+<style>
+  :root { --bg:#f7f7f8; --card:#fff; --line:#e3e3e8; --accent:#2b6cb0; --text:#1a1a1f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--text); }
+  .wrap { max-width:620px; margin:0 auto; padding:24px 16px; }
+  h1 { font-size:18px; margin:0 0 12px; }
+  #log { background:var(--card); border:1px solid var(--line); border-radius:10px;
+         padding:14px; min-height:340px; max-height:60vh; overflow-y:auto; }
+  .msg { margin:8px 0; padding:9px 12px; border-radius:10px; white-space:pre-wrap; }
+  .user { background:var(--accent); color:#fff; margin-left:64px; }
+  .bot  { background:#eef1f5; margin-right:64px; }
+  .sys  { font-size:13px; color:#666; text-align:center; }
+  form { display:flex; gap:8px; margin-top:10px; }
+  input, textarea, button { font:inherit; }
+  #q { flex:1; padding:9px 12px; border:1px solid var(--line); border-radius:8px; }
+  button { padding:9px 14px; border:0; border-radius:8px; background:var(--accent);
+           color:#fff; cursor:pointer; }
+  button.secondary { background:#e3e3e8; color:#222; }
+  .row { display:flex; gap:8px; margin-top:8px; }
+  .ticket { background:var(--card); border:1px solid var(--line); border-radius:10px;
+            padding:14px; margin-top:10px; }
+  .ticket label { display:block; font-size:13px; margin:8px 0 3px; }
+  .ticket input, .ticket textarea { width:100%; padding:8px; border:1px solid var(--line);
+            border-radius:6px; }
+  .dup { background:#fff7e6; border:1px solid #f0c36d; padding:10px; border-radius:8px;
+         font-size:13px; margin-bottom:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🩺 SugboDoc Support Assistant</h1>
+  <div id="log"></div>
+
+  <form id="chatForm">
+    <input id="q" placeholder="Type your question…" autocomplete="off" required>
+    <button>Send</button>
+  </form>
+
+  <div id="controls"></div>
+  <div id="ticketMount"></div>
+</div>
+
+<script>
+const API = location.origin;
+let convId = localStorage.getItem("sugbodoc_conv") || null;
+const log = document.getElementById("log");
+const controls = document.getElementById("controls");
+const ticketMount = document.getElementById("ticketMount");
+
+function add(role, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "user" ? "user" : role === "system" ? "sys" : "bot");
+  d.textContent = text;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function api(path, opts) {
+  const r = await fetch(API + path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (!r.ok) { add("system", "Error: " + (await r.text())); throw new Error(r.status); }
+  return r.json();
+}
+
+function render(state) {
+  controls.innerHTML = "";
+  ticketMount.innerHTML = "";
+  if (state.triage) add("system", `(triage: ${state.triage.label})`);
+
+  if (state.stage === "feedback") {
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<button id="yes">👍 That helped</button>
+                     <button id="no" class="secondary">👎 Not yet</button>`;
+    controls.appendChild(row);
+    yes.onclick = () => send("/feedback", { conversation_id: convId, helpful: true });
+    no.onclick  = () => send("/feedback", { conversation_id: convId, helpful: false });
+  } else if (state.stage === "offer_ticket") {
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<button id="mkTicket">📨 Submit a ticket</button>
+                     <button id="more" class="secondary">💬 Tell me more</button>`;
+    controls.appendChild(row);
+    more.onclick = () => send("/tell-me-more", { conversation_id: convId });
+    mkTicket.onclick = openTicket;
+  } else if (state.stage === "done") {
+    add("system", "Conversation closed. Reload to start a new one.");
+    localStorage.removeItem("sugbodoc_conv");
+  }
+}
+
+async function send(path, body) {
+  const state = await api(path, { method: "POST", body: JSON.stringify(body) });
+  if (state.reply) add("bot", state.reply);
+  render(state);
+}
+
+async function openTicket() {
+  const draft = await api("/ticket/draft?conversation_id=" + convId);
+  const box = document.createElement("div"); box.className = "ticket";
+  box.innerHTML = `
+    ${draft.duplicate ? `<div class="dup">Looks similar to existing ticket
+      <b>${draft.duplicate.key}</b> — ${draft.duplicate.summary}
+      (similarity ${draft.duplicate.similarity}).
+      <button id="isDup" class="secondary">That's my issue</button></div>` : ""}
+    <label>Your email</label><input id="tEmail" type="email" placeholder="you@example.com">
+    <label>Subject</label><input id="tSubject" value="${(draft.subject||"").replace(/"/g,"&quot;")}">
+    <label>Summary</label><textarea id="tSummary" rows="4">${draft.summary||""}</textarea>
+    <div class="row"><button id="tSubmit">Submit to Jira</button>
+      <button id="tCancel" class="secondary">Cancel</button></div>`;
+  ticketMount.appendChild(box);
+  if (draft.duplicate) isDup.onclick = () =>
+    send("/ticket/link-duplicate", { conversation_id: convId });
+  tCancel.onclick = () => ticketMount.innerHTML = "";
+  tSubmit.onclick = async () => {
+    const res = await api("/ticket", { method: "POST", body: JSON.stringify({
+      conversation_id: convId, email: tEmail.value,
+      subject: tSubject.value, summary: tSummary.value, category: draft.category,
+    })});
+    add("bot", `✅ Ticket ${res.ticket_id} created: ${res.url}`);
+    ticketMount.innerHTML = ""; controls.innerHTML = "";
+    localStorage.removeItem("sugbodoc_conv");
+  };
+}
+
+document.getElementById("chatForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const msg = q.value.trim(); if (!msg) return;
+  add("user", msg); q.value = "";
+  const state = await api("/chat", { method: "POST",
+    body: JSON.stringify({ conversation_id: convId, message: msg }) });
+  convId = state.conversation_id;
+  localStorage.setItem("sugbodoc_conv", convId);
+  add("bot", state.reply);
+  render(state);
+};
+
+add("system", "Ask about scheduling, patients, encounters, billing, immunizations…");
+</script>
+</body>
+</html>

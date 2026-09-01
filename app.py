@@ -1,197 +1,219 @@
 """
-SugboDoc Support Assistant — minimal Streamlit chatbot (Gemini).
+SugboDoc Support Assistant — Streamlit runtime bot.
 
-Answers are grounded in SugboDoc-Documentation.md, which is loaded into the model's
-system instruction on startup.
+The full inference path from the architecture doc:
 
-Flow:
-  1. Greets the user, waits for a question.
-  2. Answers with Gemini (using the docs), then asks "Did that help?" after every answer.
-  3. "Yes"  -> conversation resolved.
-     "No"   -> submit a ticket, or tell me more.
-  4. Once the user has asked 3 questions without resolution, it proactively offers
-     to file a ticket ("this is taking a while to solve...").
-  5. If the user accepts, a modal collects email / subject / summary (pre-filled
-     with an AI draft) and creates a Jira issue via the REST API.
+  question
+    -> answer model (grounded in SugboDoc-Documentation.md)
+    -> verification pass (independent model call: is every claim in the docs?)
+    -> grounded answer, or the canonical refusal
+  feedback loop ("did that help?")
+    -> failure capture (rule-based signals) + triage (docs gap / bug / scope)
+    -> offer a ticket
+  ticket
+    -> AI draft -> dedup against open Jira issues -> user review -> Jira REST create
+  every conversation is logged to logs/chats.jsonl for the eval + analytics jobs.
 
 Run:
     pip install -r requirements.txt
-    # copy .env.example -> .env and fill in GEMINI_API_KEY + the JIRA_* vars
+    #  copy .env.example -> .env, fill in GEMINI_API_KEY + JIRA_*
     streamlit run app.py
 """
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import streamlit as st
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 
-from jira_client import (
-    JIRA_ISSUE_TYPE,
-    JIRA_PROJECT_KEY,
-    browse_url,
-    create_issue,
-    jira_configured,
-)
+import bot
+import chatlog
+import config
+import failure_capture
+import jira_client
+import jira_dedup
+import knowledge
+import ticketing
+from llm import QuotaError
 
-load_dotenv(override=True)  # read .env into os.environ
-
-# --------------------------------------------------------------------------- #
-# Config
-# --------------------------------------------------------------------------- #
-
-MODEL = "gemini-3.6-flash"          # or "gemini-2.0-flash", "gemini-2.5-pro"
-DOCS_PATH = Path("SugboDoc-Documentation.md")
-QUESTIONS_BEFORE_TICKET = 3
-
-PERSONA = """You are the SugboDoc support assistant. SugboDoc is a clinic and
-practice-management SaaS.
-
-Answer using ONLY the documentation provided below. Give step-by-step instructions
-when the user is trying to accomplish a task, and mention the relevant section
-heading. If the answer is not in the documentation, say plainly that you don't
-have that information in your records rather than guessing.
-"""
+st.set_page_config(page_title="SugboDoc Support", page_icon="🩺")
+st.title("🩺 SugboDoc Support Assistant")
 
 GREETING = "Hi! I'm the SugboDoc support assistant. What can I help you with today?"
 
 
-def build_system_prompt() -> str:
-    try:
-        docs = DOCS_PATH.read_text(encoding="utf-8").strip()
-    except OSError:
-        return PERSONA + "\n\n(Note: documentation file not found.)"
-    return f"{PERSONA}\n\n===== SUGBODOC DOCUMENTATION =====\n\n{docs}\n\n===== END DOCUMENTATION ====="
-
-
 # --------------------------------------------------------------------------- #
-# Helpers
+# Session state
 # --------------------------------------------------------------------------- #
 
-def get_api_key() -> str | None:
-    """Gemini key: secrets, then env."""
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            return st.secrets["GEMINI_API_KEY"]
-    except Exception:
-        pass
-    return os.environ.get("GEMINI_API_KEY")
+def init_state() -> None:
+    ss = st.session_state
+    ss.setdefault("conversation_id", chatlog.new_conversation_id())
+    ss.setdefault("started_at", chatlog.now_iso())
+    ss.setdefault("messages", [{"role": "assistant", "content": GREETING}])
+    ss.setdefault("question_count", 0)
+    ss.setdefault("stage", "chat")            # chat | feedback | offer_ticket | done
+    ss.setdefault("grounding_checks", [])
+    ss.setdefault("failure_signals", [])
+    ss.setdefault("triage", None)             # dict | None
+    ss.setdefault("thumbs", None)             # "up" | "down" | None
+    ss.setdefault("last_ticket_id", None)
+    ss.setdefault("duplicate_of", None)
+    ss.setdefault("logged", False)
 
 
-@st.cache_resource(show_spinner=False)
-def get_client(api_key: str) -> genai.Client:
-    return genai.Client(api_key=api_key)
-
-
-@st.cache_data(show_spinner=False)
-def load_system_prompt() -> str:
-    return build_system_prompt()
-
-
-def new_chat(client: genai.Client):
-    return client.chats.create(
-        model=MODEL,
-        config=types.GenerateContentConfig(system_instruction=load_system_prompt()),
-    )
+def reset_conversation(*, log_abandoned: bool = True) -> None:
+    ss = st.session_state
+    if log_abandoned and not ss.get("logged") and ss.get("question_count", 0) > 0:
+        _log_conversation("abandoned")
+    for key in (
+        "conversation_id", "started_at", "messages", "question_count", "stage",
+        "grounding_checks", "failure_signals", "triage", "thumbs",
+        "last_ticket_id", "duplicate_of", "logged", "chat", "ticket_draft",
+        "open_ticket_dialog", "dup_dismissed",
+    ):
+        ss.pop(key, None)
 
 
 def transcript_text() -> str:
-    lines = []
-    for m in st.session_state.messages:
-        who = "User" if m["role"] == "user" else "Assistant"
-        lines.append(f"{who}: {m['content']}")
-    return "\n".join(lines)
-
-
-def answer_user(text: str) -> None:
-    """Send the user's message to Gemini and store the reply."""
-    st.session_state.messages.append({"role": "user", "content": text})
-    st.session_state.question_count += 1
-    try:
-        reply = st.session_state.chat.send_message(text).text or "(no response)"
-    except Exception as exc:  # noqa: BLE001 - surface any API error to the user
-        reply = f"Sorry, something went wrong contacting Gemini:\n\n`{exc}`"
-    st.session_state.messages.append({"role": "assistant", "content": reply})
-    st.session_state.stage = (
-        "offer_ticket"
-        if st.session_state.question_count >= QUESTIONS_BEFORE_TICKET
-        else "feedback"
+    return "\n".join(
+        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+        for m in st.session_state.messages
     )
 
 
-def draft_ticket(client: genai.Client) -> tuple[str, str, str]:
-    """AI draft used to pre-fill the ticket form: (subject, category, summary)."""
-    prompt = (
-        "Draft a support ticket from this conversation.\n"
-        "Reply in EXACTLY this format, nothing else:\n"
-        "Subject: <one short line>\n"
-        "Category: <one of: Scheduling, Patients, Clinical, Billing, "
-        "Immunization, Staff/Admin, Account, Other>\n"
-        "Summary: <2-4 sentences: the problem and what was already tried>\n\n"
-        "Conversation:\n" + transcript_text()
+def _log_conversation(outcome: str) -> None:
+    ss = st.session_state
+    tri = ss.get("triage") or {}
+    record = chatlog.ConversationRecord(
+        conversation_id=ss["conversation_id"],
+        started_at=ss["started_at"],
+        ended_at=chatlog.now_iso(),
+        outcome=outcome,
+        question_count=ss["question_count"],
+        messages=list(ss["messages"]),
+        failure_signals=sorted(set(ss.get("failure_signals", []))),
+        grounding_checks=list(ss.get("grounding_checks", [])),
+        triage_label=tri.get("label"),
+        triage_confidence=tri.get("confidence"),
+        thumbs=ss.get("thumbs"),
+        ticket_id=ss.get("last_ticket_id"),
+        ticket_category=(ss.get("ticket_draft") or (None, None, None))[1]
+        if ss.get("last_ticket_id") else None,
+        duplicate_of=(ss.get("duplicate_of") or {}).get("key"),
     )
-    subject, category, summary = "", "Other", ""
-    try:
-        text = client.models.generate_content(model=MODEL, contents=prompt).text or ""
-    except Exception:  # noqa: BLE001
-        text = ""
-    for line in text.splitlines():
-        low = line.lower().strip()
-        if low.startswith("subject:"):
-            subject = line.split(":", 1)[1].strip()
-        elif low.startswith("category:"):
-            category = line.split(":", 1)[1].strip() or "Other"
-        elif low.startswith("summary:"):
-            summary = line.split(":", 1)[1].strip()
-    return subject, category, summary
+    chatlog.append(record)
+    ss["logged"] = True
+
+
+# --------------------------------------------------------------------------- #
+# Actions
+# --------------------------------------------------------------------------- #
+
+def handle_question(text: str) -> None:
+    ss = st.session_state
+    ss.messages.append({"role": "user", "content": text})
+    ss.question_count += 1
+
+    result = bot.respond(ss.chat, text)
+    ss.messages.append({"role": "assistant", "content": result.text})
+    ss.grounding_checks.append(result.log_entry(text))
+
+    if result.refused or result.grounding.is_refusal_worthy:
+        _enter_failure(grounding_failed=result.grounding.is_refusal_worthy)
+    else:
+        ss.stage = "feedback"
+
+
+def _enter_failure(*, grounding_failed: bool = False, thumbs_down: bool = False) -> None:
+    """Compute failure signals + triage, then move to the ticket offer."""
+    ss = st.session_state
+    signals = failure_capture.detect_failures(
+        ss.messages, thumbs_down=thumbs_down, grounding_failed=grounding_failed
+    )
+    ss.failure_signals = sorted(set(ss.failure_signals) | set(signals.as_list()))
+
+    if ss.get("triage") is None or thumbs_down:
+        tri = failure_capture.triage(transcript_text())
+        ss.triage = {
+            "label": tri.label,
+            "confidence": round(tri.confidence, 2),
+            "rationale": tri.rationale,
+        }
+    ss.stage = "offer_ticket"
 
 
 # --------------------------------------------------------------------------- #
 # Ticket modal
 # --------------------------------------------------------------------------- #
 
-def reset_conversation() -> None:
-    for key in ("messages", "question_count", "stage", "last_ticket_id",
-                "chat", "ticket_draft", "open_ticket_dialog"):
-        st.session_state.pop(key, None)
-
-
 @st.dialog("Submit a support ticket")
-def ticket_dialog(client: genai.Client) -> None:
-    """Separate modal window for filing a Jira ticket — kept apart from the chat."""
-    st.caption("This opens a separate ticket form. Your chat stays as it is.")
+def ticket_dialog() -> None:
+    ss = st.session_state
+    st.caption("A separate ticket form — your chat stays exactly as it is.")
 
-    if not jira_configured():
+    if not jira_client.jira_configured():
         st.error(
             "Jira isn't configured. Add `JIRA_BASE_URL`, `JIRA_EMAIL`, "
-            "`JIRA_API_TOKEN` and `JIRA_PROJECT_KEY` to your `.env`, then restart."
+            "`JIRA_API_TOKEN` and `JIRA_PROJECT_KEY` to `.env`, then restart."
         )
         if st.button("Close"):
             st.rerun()
         return
 
-    if "ticket_draft" not in st.session_state:
-        with st.spinner("Preparing a draft…"):
-            st.session_state.ticket_draft = draft_ticket(client)
-    draft_subject, draft_category, draft_summary = st.session_state.ticket_draft
+    if "ticket_draft" not in ss:
+        with st.spinner("Drafting a ticket from the conversation…"):
+            draft = ticketing.draft_ticket(transcript_text())
+            ss.ticket_draft = (draft.subject, draft.category, draft.summary)
+            ss.duplicate_of = None
+            dup = jira_dedup.find_duplicate(draft.subject, draft.summary)
+            if dup:
+                ss.duplicate_of = {
+                    "key": dup.key, "summary": dup.summary,
+                    "similarity": round(dup.similarity, 3),
+                }
+
+    draft_subject, draft_category, draft_summary = ss.ticket_draft
+
+    if ss.get("duplicate_of") and not ss.get("dup_dismissed"):
+        d = ss.duplicate_of
+        st.warning(
+            f"This looks close to an existing open ticket "
+            f"**[{d['key']}]({jira_client.browse_url(d['key'])})** — "
+            f"*{d['summary']}* (similarity {d['similarity']}).",
+        )
+        c1, c2 = st.columns(2)
+        if c1.button("That's my issue — don't file", use_container_width=True):
+            ss.last_ticket_id = None
+            ss.messages.append({
+                "role": "assistant",
+                "content": (
+                    f"Linked you to existing ticket "
+                    f"**[{d['key']}]({jira_client.browse_url(d['key'])})**. "
+                    "The team is already tracking it."
+                ),
+            })
+            ss.stage = "done"
+            _log_conversation("linked_duplicate")
+            ss.pop("ticket_draft", None)
+            st.rerun()
+        if c2.button("File a new one anyway", use_container_width=True):
+            ss.dup_dismissed = True
+            st.rerun()
+        return
 
     with st.form("ticket_form"):
         email = st.text_input("Your email", placeholder="you@example.com")
         subject = st.text_input("Subject", value=draft_subject)
         summary = st.text_area(
             "Summary", value=draft_summary, height=170,
-            help="Describe the issue in your own words — add any context that helps.",
+            help="Edit freely — add anything that helps the team reproduce it.",
         )
         col_submit, col_cancel = st.columns(2)
         submitted = col_submit.form_submit_button("Submit to Jira", use_container_width=True)
         cancelled = col_cancel.form_submit_button("Cancel", use_container_width=True)
 
     if cancelled:
-        st.session_state.pop("ticket_draft", None)
+        ss.pop("ticket_draft", None)
+        ss.pop("dup_dismissed", None)
         st.rerun()
 
     if submitted:
@@ -199,146 +221,155 @@ def ticket_dialog(client: genai.Client) -> None:
             st.error("Please fill in email, subject, and summary.")
             return
         try:
-            with st.spinner("Creating Jira issue…"):
-                key = create_issue(
+            with st.spinner("Creating the Jira issue…"):
+                tri_label = (ss.get("triage") or {}).get("label", "")
+                key = jira_client.create_issue(
                     subject=subject.strip(),
                     category=draft_category,
                     summary=summary.strip(),
                     contact=email.strip(),
                     transcript=transcript_text(),
-                    question_count=st.session_state.question_count,
+                    question_count=ss.question_count,
+                    extra_labels=[f"triage-{tri_label}"] if tri_label else None,
                 )
         except Exception as exc:  # noqa: BLE001
             st.error(f"Couldn't create the Jira issue:\n\n{exc}")
             return
-        st.session_state.last_ticket_id = key
-        st.session_state.pop("ticket_draft", None)
-        st.session_state.messages.append({
+
+        ss.last_ticket_id = key
+        ss.ticket_draft = (subject.strip(), draft_category, summary.strip())
+        ss.pop("dup_dismissed", None)
+        ss.messages.append({
             "role": "assistant",
             "content": (
-                f"✅ Ticket **[{key}]({browse_url(key)})** created in Jira.\n\n"
+                f"✅ Ticket **[{key}]({jira_client.browse_url(key)})** created in Jira.\n\n"
                 f"**Subject:** {subject.strip()}\n\n"
                 f"Our team will follow up at **{email.strip()}**."
             ),
         })
-        st.session_state.stage = "done"
+        ss.stage = "done"
+        _log_conversation("ticket_filed")
         st.rerun()
 
 
 # --------------------------------------------------------------------------- #
-# App
+# App body
 # --------------------------------------------------------------------------- #
 
-st.set_page_config(page_title="SugboDoc Support", page_icon="🩺")
-st.title("🩺 SugboDoc Support Assistant")
+init_state()
 
-# --- session state defaults ---
-st.session_state.setdefault("messages", [{"role": "assistant", "content": GREETING}])
-st.session_state.setdefault("question_count", 0)
-st.session_state.setdefault("stage", "chat")          # chat | feedback | offer_ticket | done
-st.session_state.setdefault("last_ticket_id", None)
-
-# --- sidebar / status ---
-api_key = get_api_key()
 with st.sidebar:
-    if DOCS_PATH.exists():
-        st.caption(f"📄 Grounded on `{DOCS_PATH.name}`")
+    if config.DOCS_PATH.exists():
+        st.caption(f"📄 Grounded on `{config.DOCS_PATH.name}` "
+                   f"({len(knowledge.sections())} sections)")
     else:
-        st.caption(f"⚠️ `{DOCS_PATH.name}` not found — answering without docs")
-    if jira_configured():
-        st.caption(f"🟢 Jira: `{JIRA_PROJECT_KEY}` · {JIRA_ISSUE_TYPE}")
+        st.caption(f"⚠️ `{config.DOCS_PATH.name}` not found")
+
+    if jira_client.jira_configured():
+        st.caption(f"🟢 Jira: `{jira_client.JIRA_PROJECT_KEY}` · {jira_client.JIRA_ISSUE_TYPE}")
     else:
         st.caption("🔴 Jira not configured — see `.env.example`")
-    if not api_key:
-        st.text_input("Gemini API key", type="password", key="api_key_input")
-        api_key = api_key or st.session_state.get("api_key_input")
+
+    if config.LLM_BACKEND == "mock":
+        st.caption("🧪 backend: `mock` (offline, canned answers)")
+    else:
+        st.caption(f"🧠 answer: `{config.ANSWER_MODEL}` · verify: `{config.UTILITY_MODEL}`")
+
+    _needs_key = config.LLM_BACKEND == "gemini" and not config.get_api_key()
+    if _needs_key:
+        st.error("Set `GEMINI_API_KEY` in `.env` (or run with `LLM_BACKEND=mock`).")
+
     st.metric("Questions this chat", st.session_state.question_count)
+    tri = st.session_state.get("triage")
+    if tri:
+        st.caption(f"🔎 triage: **{tri['label']}** ({tri['confidence']})")
+    if st.session_state.get("failure_signals"):
+        st.caption("⚠️ signals: " + ", ".join(st.session_state["failure_signals"]))
+
     if st.button("Start a new chat"):
         reset_conversation()
         st.rerun()
 
-if not api_key:
-    st.info(
-        "Add your Gemini API key in the sidebar to begin. "
-        "Get one free at https://aistudio.google.com/apikey"
-    )
+if _needs_key:
+    st.info("Add your Gemini API key to `.env` to begin (get one free at "
+            "https://aistudio.google.com/apikey), or start with `LLM_BACKEND=mock "
+            "streamlit run app.py` to try the flow offline.")
     st.stop()
 
-client = get_client(api_key)
-st.session_state.setdefault("chat", new_chat(client))
+st.session_state.setdefault("chat", bot.fresh_chat())
 
-# --- render conversation ---
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# --- open the ticket modal when requested (consumed once) ---
 if st.session_state.pop("open_ticket_dialog", False):
-    ticket_dialog(client)
+    ticket_dialog()
 
-# --- stage-specific UI ---
 stage = st.session_state.stage
 
-if stage == "chat":
-    if prompt := st.chat_input("Type your question…"):
-        with st.spinner("Thinking…"):
-            answer_user(prompt)
+
+def question_box(label: str = "Type your question…") -> None:
+    if prompt := st.chat_input(label):
+        try:
+            with st.spinner("Thinking…"):
+                handle_question(prompt)
+        except QuotaError as exc:
+            st.error(str(exc))
+            st.stop()
         st.rerun()
+
+
+if stage == "chat":
+    question_box()
 
 elif stage == "feedback":
     with st.chat_message("assistant"):
         st.write("Did that help? You can also just keep typing below.")
-        col_yes, col_no = st.columns(2)
-        if col_yes.button("👍 Yes", use_container_width=True):
+        c_yes, c_no = st.columns(2)
+        if c_yes.button("👍 Yes", use_container_width=True):
+            st.session_state.thumbs = "up"
             st.session_state.messages.append(
                 {"role": "assistant", "content": "Great — glad I could help! 🎉"}
             )
             st.session_state.stage = "done"
+            _log_conversation("resolved")
             st.rerun()
-        if col_no.button("👎 No", use_container_width=True):
-            st.session_state.stage = "offer_ticket"
+        if c_no.button("👎 No", use_container_width=True):
+            st.session_state.thumbs = "down"
+            _enter_failure(thumbs_down=True)
             st.rerun()
-    # chat stays available; a follow-up here counts as another question
-    if prompt := st.chat_input("Type your question…"):
-        with st.spinner("Thinking…"):
-            answer_user(prompt)
-        st.rerun()
+    question_box()
 
 elif stage == "offer_ticket":
-    taking_long = st.session_state.question_count >= QUESTIONS_BEFORE_TICKET
+    taking_long = st.session_state.question_count >= config.QUESTIONS_BEFORE_TICKET
+    label = (st.session_state.get("triage") or {}).get("label", "docs_gap")
     with st.chat_message("assistant"):
-        if taking_long:
-            st.warning(
-                "This is taking a while to solve. Would you like to submit a support "
-                "ticket, or tell me more?"
-            )
+        if label == "out_of_scope":
+            st.info("This looks outside what SugboDoc support covers. I can still "
+                    "log a ticket so a person can point you the right way.")
+        elif taking_long:
+            st.warning("This is taking a while to solve. Want to submit a ticket, "
+                       "or tell me more?")
         else:
-            st.write(
-                "Sorry that didn't help. Would you like to submit a ticket, or tell "
-                "me more so I can try again?"
-            )
-        col_yes, col_no = st.columns(2)
-        if col_yes.button("📨 Submit a ticket", use_container_width=True):
+            st.write("Sorry that didn't help. Want to submit a ticket, or tell me "
+                     "more so I can try again?")
+        c_yes, c_no = st.columns(2)
+        if c_yes.button("📨 Submit a ticket", use_container_width=True):
             st.session_state.open_ticket_dialog = True
             st.rerun()
-        if col_no.button("💬 Tell me more", use_container_width=True):
+        if c_no.button("💬 Tell me more", use_container_width=True):
             st.session_state.messages.append(
                 {"role": "assistant",
                  "content": "Okay — what else can you tell me about the issue?"}
             )
             st.session_state.stage = "chat"
             st.rerun()
-    # typing here is the same as "tell me more"
-    if prompt := st.chat_input("Or keep describing the issue…"):
-        with st.spinner("Thinking…"):
-            answer_user(prompt)
-        st.rerun()
+    question_box("Or keep describing the issue…")
 
 elif stage == "done":
     key = st.session_state.last_ticket_id
-    if key:
+    if key and jira_client.jira_configured():
         st.success(f"Ticket {key} created in Jira.")
-        if jira_configured():
-            st.markdown(f"[Open {key} in Jira]({browse_url(key)})")
+        st.markdown(f"[Open {key} in Jira]({jira_client.browse_url(key)})")
     st.chat_message("assistant").write(
         "Use **Start a new chat** in the sidebar to ask something else."
     )

@@ -7,3 +7,12 @@ SugboDoc-Documentation.md
 
 system-prompt.md
 
+# generated at runtime
+__pycache__/
+.pytest_cache/
+*.sqlite
+logs/
+doc_proposals/
+eval_generated.jsonl
+eval_scorecard.json
+tickets.csv
