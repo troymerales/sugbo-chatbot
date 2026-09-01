@@ -193,6 +193,7 @@ def ticket_dialog() -> None:
         return
 
     with st.form("ticket_form"):
+        name = st.text_input("Name (optional)", placeholder="Jane Dela Cruz")
         email = st.text_input("Your email", placeholder="you@example.com")
         subject = st.text_input("Subject", value=draft_subject)
         summary = st.text_area(
@@ -227,6 +228,7 @@ def ticket_dialog() -> None:
                     contact=email.strip(),
                     transcript=transcript_text(),
                     question_count=ss.question_count,
+                    submitter_name=name.strip() or None,
                     due_date=due_date,
                     urgency=urgency,
                 )

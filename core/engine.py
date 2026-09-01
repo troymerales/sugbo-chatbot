@@ -136,7 +136,7 @@ def ticket_draft(conv: Conversation) -> dict:
 
 
 def submit_ticket(conv: Conversation, *, email: str, subject: str, summary: str,
-                  category: str = "Other", needed_by: str = "") -> dict:
+                  category: str = "Other", needed_by: str = "", name: str = "") -> dict:
     if not jira_client.jira_configured():
         raise RuntimeError("Jira is not configured (JIRA_* env vars).")
 
@@ -148,7 +148,7 @@ def submit_ticket(conv: Conversation, *, email: str, subject: str, summary: str,
     key = jira_client.create_issue(
         subject=subject, category=category, summary=summary, contact=email,
         transcript=conv.transcript(), question_count=conv.question_count,
-        due_date=due_date, urgency=urgency,
+        submitter_name=name, due_date=due_date, urgency=urgency,
     )
     conv.ticket_id = key
     conv.ticket_category = category

@@ -22,6 +22,13 @@ JIRA_API_TOKEN = os.environ.get("JIRA_API_TOKEN", "")
 JIRA_PROJECT_KEY = os.environ.get("JIRA_PROJECT_KEY", "")
 JIRA_ISSUE_TYPE = os.environ.get("JIRA_ISSUE_TYPE", "Task")
 
+# Plain-text custom fields that hold the chat submitter's identity — the
+# `reporter` system field needs a Jira accountId, so a chat user's name/email
+# can't go there. Looked up by name at runtime; set to "" to skip one.
+JIRA_SUBMITTER_FIELD = os.environ.get("JIRA_SUBMITTER_FIELD", "Submitter")
+JIRA_SUBMITTER_EMAIL_FIELD = os.environ.get("JIRA_SUBMITTER_EMAIL_FIELD", "Submitter Email")
+JIRA_SUBJECT_FIELD = os.environ.get("JIRA_SUBJECT_FIELD", "Subject")
+
 _AUTH = (JIRA_EMAIL, JIRA_API_TOKEN)
 _HEADERS = {"Accept": "application/json", "Content-Type": "application/json"}
 
@@ -35,23 +42,26 @@ def browse_url(key: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Reporter lookup
+# Reporter + custom-field lookup
 # --------------------------------------------------------------------------- #
 
 _ACCOUNT_ID_CACHE: dict[str, str | None] = {}
+_ALL_FIELDS_CACHE: list[dict] | None = None
 
 
-def resolve_account_id(email: str | None) -> str | None:
-    """Best-effort: the Jira Cloud accountId for `email`, or None.
+def resolve_account_id(query: str | None) -> str | None:
+    """Best-effort: the Jira Cloud accountId for a name or email, or None.
 
-    Jira Cloud won't accept an email in the `reporter` field — it needs an
+    `/rest/api/3/user/search` matches on display name *and* email. Jira Cloud
+    won't accept a bare name/email in the `reporter` field — it needs an
     accountId — and only works if the API-token user has *Modify Reporter*
     permission. Most people filing via the chat aren't Jira users at all, so a
-    None result is normal; the email is still recorded in the description.
+    None result is normal; the name/email is still recorded in custom fields
+    and the description.
     """
-    if not email or not jira_configured():
+    if not query or not jira_configured():
         return None
-    key = email.strip().lower()
+    key = query.strip().lower()
     if key in _ACCOUNT_ID_CACHE:
         return _ACCOUNT_ID_CACHE[key]
 
@@ -59,21 +69,43 @@ def resolve_account_id(email: str | None) -> str | None:
     try:
         resp = requests.get(
             f"{JIRA_BASE_URL}/rest/api/3/user/search",
-            params={"query": email}, auth=_AUTH, headers=_HEADERS, timeout=15,
+            params={"query": query}, auth=_AUTH, headers=_HEADERS, timeout=15,
         )
         if resp.status_code == 200:
             users = resp.json() or []
             exact = [u for u in users
-                     if (u.get("emailAddress") or "").lower() == key]
+                     if (u.get("emailAddress") or "").lower() == key
+                     or (u.get("displayName") or "").strip().lower() == key]
             if exact:
                 account_id = exact[0].get("accountId")
-            elif len(users) == 1:            # email hidden by privacy settings
+            elif len(users) == 1:            # unambiguous partial match
                 account_id = users[0].get("accountId")
     except requests.RequestException:
         pass
 
     _ACCOUNT_ID_CACHE[key] = account_id
     return account_id
+
+
+def _field_id(name: str) -> str | None:
+    """The Jira field id (e.g. `customfield_10050`) for a field named `name`,
+    or None if the project doesn't have it / the field list can't be read."""
+    global _ALL_FIELDS_CACHE
+    if not name or not jira_configured():
+        return None
+    if _ALL_FIELDS_CACHE is None:
+        try:
+            resp = requests.get(f"{JIRA_BASE_URL}/rest/api/3/field",
+                                auth=_AUTH, headers=_HEADERS, timeout=15)
+            _ALL_FIELDS_CACHE = resp.json() if resp.status_code == 200 else []
+        except requests.RequestException:
+            _ALL_FIELDS_CACHE = []
+    key = name.strip().lower()
+    matches = sorted(
+        (f for f in _ALL_FIELDS_CACHE if (f.get("name") or "").strip().lower() == key),
+        key=lambda f: not f.get("custom", False),   # prefer a custom field
+    )
+    return matches[0].get("id") if matches else None
 
 
 # --------------------------------------------------------------------------- #
@@ -101,11 +133,14 @@ _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 def build_description(
     summary: str, category: str, contact: str, question_count: int, transcript: str,
-    *, due_date: str | None = None, urgency: str | None = None,
+    *, submitter_name: str | None = None, due_date: str | None = None,
+    urgency: str | None = None,
 ) -> str:
-    lines = [
-        summary, "",
-        f"Reporter email: {contact}",
+    lines = [summary, ""]
+    if submitter_name:
+        lines.append(f"Submitter: {submitter_name}")
+    lines += [
+        f"Submitter email: {contact}",
         f"Suggested category: {category}",
     ]
     if due_date:
@@ -141,16 +176,20 @@ def create_issue(
     contact: str,
     transcript: str,
     question_count: int,
+    submitter_name: str | None = None,
     due_date: str | None = None,
     urgency: str | None = None,
     extra_labels: list[str] | None = None,
 ) -> str:
     """Create a Jira issue and return its key (e.g. 'KAN-12').
 
-    `contact` is the user's email — recorded in the description and, when it
-    matches a Jira user we may set as reporter, used for the `reporter` field.
+    The chat submitter's name/email go to the project's plain-text `Submitter` /
+    `Submitter Email` custom columns (and the description). The `reporter` system
+    field is only set if the *email* matches a real Jira user — otherwise it
+    stays the API-token user, which signals the ticket came from the assistant.
     `due_date` (YYYY-MM-DD) maps to `duedate`; `urgency` becomes a label.
     """
+    submitter_name = (submitter_name or "").strip() or None
     label_cat = category.lower().replace("/", "-").replace(" ", "-") or "other"
     labels = ["sugbodoc-assistant", label_cat, *(extra_labels or [])]
     if urgency:
@@ -161,24 +200,41 @@ def create_issue(
         "summary": (subject or "SugboDoc support request")[:250],
         "description": _adf(build_description(
             summary, category, contact, question_count, transcript,
-            due_date=due_date, urgency=urgency,
+            submitter_name=submitter_name, due_date=due_date, urgency=urgency,
         )),
         "issuetype": {"name": JIRA_ISSUE_TYPE},
         "labels": labels,
     }
     if due_date and _ISO_DATE.match(due_date):
         fields["duedate"] = due_date
+
+    # `reporter` system field — only if the email is a real Jira user; the name
+    # deliberately does NOT feed this (it bypasses the strict user format by
+    # going to the plain-text `Submitter` field instead).
     account_id = resolve_account_id(contact)
     if account_id:
         fields["reporter"] = {"id": account_id}
 
+    # Plain-text custom columns for the chat submitter's identity.
+    for field_name, value in (
+        (JIRA_SUBMITTER_FIELD, submitter_name),
+        (JIRA_SUBMITTER_EMAIL_FIELD, contact or None),
+        (JIRA_SUBJECT_FIELD, subject or None),
+    ):
+        fid = _field_id(field_name) if value else None
+        if fid:
+            fields[fid] = value
+
     resp = _create(fields)
     if resp.status_code == 400:
         body = resp.text
-        dropped = [f for f in _OPTIONAL_FIELDS if f in fields and f in body]
+        dropped = [
+            k for k in list(fields)
+            if (k in _OPTIONAL_FIELDS or k.startswith("customfield_")) and k in body
+        ]
         if dropped:
-            for f in dropped:
-                fields.pop(f, None)
+            for k in dropped:
+                fields.pop(k, None)
             resp = _create(fields)
     if resp.status_code >= 300:
         raise RuntimeError(f"Jira API {resp.status_code}: {resp.text[:500]}")

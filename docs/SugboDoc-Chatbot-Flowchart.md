@@ -149,8 +149,8 @@ flowchart TD
     C[Failed conversation<br/>+ user said yes] --> DRAFT[Default draft — no model call:<br/>subject = first question]
     DRAFT --> DEDUP[Check recent open tickets<br/>embed + cosine similarity<br/>the ONE time Jira is read]
     DEDUP -->|near-duplicate exists| LINK[Show user the existing ticket]
-    DEDUP -->|new| REVIEW[User fills email, subject, summary<br/>+ picks a due date]
-    REVIEW --> CREATE["POST /rest/api/3/issue<br/>+ reporter (from email), duedate,<br/>urgency label · drop-and-retry on 400"]
+    DEDUP -->|new| REVIEW[User fills name, email, subject,<br/>summary + picks a due date]
+    REVIEW --> CREATE["POST /rest/api/3/issue<br/>+ reporter (name/email lookup), duedate,<br/>urgency label, custom Subject/Reporter columns<br/>· drop-and-retry on 400"]
     CREATE --> ID[Return ticket ID to user]
     ID --> LOG[(Log: ticket ID, due_date)]
 
@@ -415,7 +415,7 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `python -m scripts.llm_cache` | Inspect / `--clear` the response cache | — |
 | `python -m core.chatlog` | Rebuild `logs/chats.csv` from the primary store (a flat CSV mirror is also written on every log) | — |
 | `python -m scripts.jira_check` | Standalone connectivity + createmeta field check (`--create-test` files a throwaway) | setup |
-| `pytest` | 62 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
+| `pytest` | 63 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
 
 ### Data files
 
@@ -457,7 +457,7 @@ flowchart LR
 
 ```
 pip install -r requirements-dev.txt
-pytest                                   # 62 offline tests (~2s)
+pytest                                   # 63 offline tests (~2s)
 
 cp .env.example .env                     # add GEMINI_API_KEY (+ JIRA_* for ticketing)
 streamlit run app.py                     #  or:  LLM_BACKEND=mock streamlit run app.py

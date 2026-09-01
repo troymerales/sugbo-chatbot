@@ -194,6 +194,7 @@
   .wctrl button{flex:1; min-width:120px; border:0; border-radius:9px; padding:9px 10px;
     font:inherit; font-weight:600; cursor:pointer; background:var(--indigo); color:#fff;}
   .wctrl button.secondary{background:#e9eaf6; color:#333ac2;}
+  .wctrl button:disabled{opacity:.6; cursor:default;}
 
   /* ticket form — a centred modal over a dimmed page */
   .modal-overlay{
@@ -496,7 +497,20 @@ function render(state) {
     controls.innerHTML = `<button id="mkTicket">📨 Submit a ticket</button>
                           <button id="more" class="secondary">💬 Tell me more</button>`;
     more.onclick = () => send("/tell-me-more", { conversation_id: convId });
-    mkTicket.onclick = openTicket;
+    mkTicket.onclick = async () => {
+      // buffer while the draft + duplicate check load (a Jira read)
+      const label = mkTicket.textContent;
+      mkTicket.disabled = more.disabled = true;
+      mkTicket.textContent = "⏳ Preparing…";
+      showTyping();
+      try {
+        await openTicket();
+      } finally {
+        hideTyping();
+        mkTicket.disabled = more.disabled = false;
+        mkTicket.textContent = label;
+      }
+    };
   } else if (state.stage === "done") {
     add("sys", "Conversation closed — ask something else to start a new one.");
     localStorage.removeItem("sugbodoc_conv");
@@ -529,6 +543,8 @@ async function openTicket() {
           <b>${draft.duplicate.key}</b> — ${draft.duplicate.summary}
           (similarity ${draft.duplicate.similarity}).
           <button data-dup>That's my issue — link it instead</button></div>` : ""}
+        <label>Name <span style="color:var(--muted)">(optional)</span></label>
+        <input data-f="name" placeholder="Jane Dela Cruz">
         <label>Your email</label>
         <input data-f="email" type="email" placeholder="you@example.com">
         <label>Subject</label>
@@ -539,7 +555,7 @@ async function openTicket() {
         <input data-f="when" type="date">
         <div data-err class="err" hidden></div>
         <div class="actions">
-          <button data-submit>Submit to Jira</button>
+          <button data-submit>Submit</button>
           <button data-cancel class="secondary">Cancel</button>
         </div>
       </div>
@@ -583,7 +599,8 @@ async function openTicket() {
     let res;
     try {
       res = await api("/ticket", { method: "POST", body: JSON.stringify({
-        conversation_id: convId, email: f("email").value.trim(),
+        conversation_id: convId, name: f("name").value.trim(),
+        email: f("email").value.trim(),
         subject: f("subject").value.trim(), summary: f("summary").value.trim(),
         category: draft.category, needed_by: f("when").value.trim(),
       })});

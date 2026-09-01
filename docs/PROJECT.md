@@ -72,7 +72,7 @@ chatbot/
 ├── scripts/                      llm_cache.py · jira_check.py · jira_test_ticket.py
 ├── web/index.html                SugboDoc dashboard mockup + floating chat widget
 ├── docs/                         PROJECT.md · SugboDoc-Chatbot-Flowchart.md · the knowledge base
-└── tests/                        pytest suite (runs fully offline, 62 tests)
+└── tests/                        pytest suite (runs fully offline, 63 tests)
 ```
 
 Each subdirectory is a package. Modules import each other as `from core import bot`,
@@ -194,20 +194,25 @@ Two jobs:
 
 ### `jira_client.py`
 - `create_issue(*, subject, category, summary, contact, transcript, question_count,
-  due_date=?, urgency=?, extra_labels=?) -> "KAN-12"` — the outbound write.
-  Builds an Atlassian Document Format (ADF) description via `_adf()` (one paragraph per
-  line, blank line = spacer) that also carries *Reporter email*, *Target date* and
-  *Requested urgency*. Fields on the payload: `project`, `summary`, `description`,
-  `issuetype`, `labels` (`sugbodoc-assistant`, category, `urgency-<level>`); `duedate`
-  (only when `due_date` matches `YYYY-MM-DD`); `reporter` (`{"id": accountId}`) when
-  `resolve_account_id(contact)` finds the email as a Jira user. **Graceful validation:**
-  on a 400 that names `reporter` / `duedate` / `priority` (field not on the create screen,
-  no *Modify Reporter* permission,
-  bad format), those keys are dropped and the create is retried once so the ticket still
-  files.
-- `resolve_account_id(email)` — `GET /rest/api/3/user/search`, best-effort, cached in
-  `_ACCOUNT_ID_CACHE`. Returns `None` for a non-Jira user (the normal case — the email is
-  still in the description).
+  submitter_name=?, due_date=?, urgency=?, extra_labels=?) -> "KAN-12"` — the outbound
+  write. Payload fields: `project`, `summary`, `description` (ADF, carries *Submitter*,
+  *Submitter email*, *Target date*, *Requested urgency*), `issuetype`, `labels`
+  (`sugbodoc-assistant`, category, `urgency-<level>`); `duedate` (only when `due_date` is
+  `YYYY-MM-DD`).
+  - **`reporter`** (system field) is set only when `resolve_account_id(email)` finds a real
+    Jira user. A chat submitter's *name* deliberately does **not** feed it (Jira needs a
+    strict accountId) — so for external submitters the reporter stays the API-token user,
+    which is the signal that the ticket came from the assistant.
+  - The submitter's name / email / subject go to plain-text **custom columns** —
+    `Submitter`, `Submitter Email`, `Subject` (names via `JIRA_SUBMITTER_FIELD` /
+    `JIRA_SUBMITTER_EMAIL_FIELD` / `JIRA_SUBJECT_FIELD` env; resolved to `customfield_XXXXX`
+    ids at runtime by `_field_id()`; skipped if the project doesn't have them).
+  - **Graceful validation:** a 400 naming `reporter` / `duedate` / `priority` / any
+    `customfield_*` drops those keys and retries once so the ticket still files.
+- `resolve_account_id(name_or_email)` — `GET /rest/api/3/user/search` (matches display
+  name *and* email), best-effort, cached. `None` for a non-Jira user is the normal case.
+- `_field_id(name)` — one cached `GET /rest/api/3/field`, returns the field id for a
+  field named `name` (prefers a custom field).
 - `list_recent_open_issues()` / `list_resolved_issues()` — the **only** reads, both batch:
   the first for dedup, the second for the docs loop. `_search()` uses the v3 JQL endpoint
   with a fallback to the older `/search`.
@@ -340,9 +345,12 @@ shows at the bottom of the log.
 
 The **ticket form is a centred modal** (`openTicket()`): a full-viewport overlay dims and
 blurs the page (dashboard *and* widget), with the form card in the middle — close via `×`,
-Cancel, `Esc`, or a backdrop click. Submit disables the button ("Submitting…"), validates
-client-side, and on success dismisses the modal and drops back to the chat, which now shows
-the *"✅ Ticket … created"* confirmation.
+Cancel, `Esc`, or a backdrop click. Clicking **"Submit a ticket"** in the chat first shows
+a buffer — the button reads *"⏳ Preparing…"* and disables, and the typing bubble shows —
+while the draft + duplicate check (a Jira read) load; then the modal opens. Submit inside
+the modal disables the button ("Submitting…"), validates client-side, and on success
+dismisses the modal and drops back to the chat, which now shows the *"✅ Ticket … created"*
+confirmation.
 
 `GET /documentation` renders `docs/SugboDoc-Documentation.md` with a sticky left-hand
 section nav (built from `knowledge.content_sections()`, `##` + `###`, with scroll-spy) and
@@ -443,7 +451,7 @@ catch rate, repeat-question rate, triage mix, ticket categories.
 
 ## 7. Tests — `tests/`
 
-`pip install -r requirements-dev.txt && pytest`. 62 tests, **fully offline** (the
+`pip install -r requirements-dev.txt && pytest`. 63 tests, **fully offline** (the
 `conftest.py` fixture forces the mock backend and points every path — cache, chat log — at
 a `tmp_path`; the DB tests use a throwaway SQLite file, no server). Coverage:
 
@@ -534,7 +542,7 @@ grounding, fine-tuning, TextTiling for doc segmentation.
 
 ```
 pip install -r requirements-dev.txt
-pytest                                        # 62 tests, offline, ~2s
+pytest                                        # 63 tests, offline, ~2s
 
 cp .env.example .env                          # add GEMINI_API_KEY
 python -m evaluation.eval_run --limit 10      # sanity-check the real model
