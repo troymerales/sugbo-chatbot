@@ -26,7 +26,14 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env", override=True)
 
 DOCS_DIR = ROOT / "docs"
+
+# The knowledge base the assistant is grounded on. The full document is
+# git-ignored (swap yours in at `docs/SugboDoc-Documentation.md`); the committed
+# `.sample.md` excerpt is the fallback so a fresh clone / CI runs out of the box.
 DOCS_PATH = DOCS_DIR / "SugboDoc-Documentation.md"
+if not DOCS_PATH.exists():
+    DOCS_PATH = DOCS_DIR / "SugboDoc-Documentation.sample.md"
+
 SYSTEM_PROMPT_PATH = DOCS_DIR / "system-prompt.md"
 
 LOG_DIR = ROOT / "logs"

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        # dev deps + the FastAPI/DB extras so every test runs (nothing skipped)
+        run: pip install -r requirements-dev.txt -r requirements-service.txt
+
+      - name: Compile-check
+        run: python -m compileall -q config.py app.py core api evaluation analytics scripts tests
+
+      - name: Test
+        # the suite is fully offline: mock LLM backend, tmp paths, throwaway SQLite.
+        # No GEMINI_API_KEY / JIRA_* / DATABASE_URL needed.
+        run: pytest

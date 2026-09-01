@@ -72,7 +72,7 @@ chatbot/
 ├── scripts/                      llm_cache.py · jira_check.py · jira_test_ticket.py
 ├── web/index.html                SugboDoc dashboard mockup + floating chat widget
 ├── docs/                         PROJECT.md · SugboDoc-Chatbot-Flowchart.md · the knowledge base
-└── tests/                        pytest suite (runs fully offline, 63 tests)
+└── tests/                        pytest suite (runs fully offline, 64 tests)
 ```
 
 Each subdirectory is a package. Modules import each other as `from core import bot`,
@@ -126,10 +126,11 @@ Real Gemini SDK calls. `_to_contents()` converts the neutral `{"role","text"}` l
 ### `_mock_backend.py`
 Deterministic offline stand-in, selected by `--mock` / `LLM_BACKEND=mock`. It is **not
 smart** — it exists so every code path runs without an API key:
-- `generate()` inspects the *system prompt* to tell which call it is (verify / triage /
-  draft / judge / cluster-label / docs-loop) and returns well-formed JSON for each; for a
-  plain user question it does naive word-overlap retrieval over the doc sections
-  (`_retrieve`) and returns that section's steps, or the refusal if nothing scores well.
+- `generate()` inspects the *system prompt* to tell which call it is (verify / judge /
+  cluster-label / docs-loop — plus legacy triage/draft branches) and returns well-formed
+  JSON for each; for a plain user question it does naive word-overlap retrieval over the
+  doc sections (`_retrieve`) and returns that section's steps, or the refusal if nothing
+  scores well.
 - `embed()` — hashed bag-of-words → 256-dim L2-normalised vectors. Real *lexical* cosine
   similarity (similar wording → similar vectors), enough for the dedup / clustering code
   to run and be tested.
@@ -228,8 +229,10 @@ Jira read in the whole runtime, and it's per-submission, not per-message.**
 ### `chatlog.py`
 - `ConversationRecord` — one dataclass per finished conversation: id, timestamps, outcome
   (`resolved` | `ticket_filed` | `linked_duplicate` | `abandoned`), question count, full
-  messages, `failure_signals`, `grounding_checks`, `triage_label`, `thumbs`, `ticket_id`,
-  `duplicate_of`. `.failed` and `.failed_user_questions()` are used by the analytics.
+  messages, `failure_signals`, `grounding_checks`, `thumbs`, `ticket_id`, `ticket_category`,
+  `needed_by` / `due_date`, `duplicate_of` (`triage_label` / `triage_confidence` are still
+  fields but no longer populated — triage was removed). `.failed` and
+  `.failed_user_questions()` are used by the analytics.
 - `append(record)` / `load_all()` — storage depends on `config.DATABASE_URL`: unset →
   one JSON line per conversation in `logs/chats.jsonl`; set → one row in the `chat_logs`
   table (via `db.py`). Same API either way, so the analytics scripts don't care.
@@ -237,10 +240,11 @@ Jira read in the whole runtime, and it's per-submission, not per-message.**
   used by `seed_demo_log.py --reset` and the tests. `new_conversation_id()`, `now_iso()`.
 - **Local CSV mirror:** every `append()` also writes a flattened row to
   `logs/chats.csv` (`config.CHAT_LOG_CSV_PATH`) — even when the primary store is Postgres.
-  One row per conversation, ~17 columns (`outcome`, `failed`, `failure_signals`,
-  `triage_label`, `thumbs`, `ticket_id`, `first_user_question`, `last_assistant_message`, …).
-  Nothing reads it back; it's for eyeballing in a spreadsheet. `python chatlog.py` rebuilds
-  it from the primary store (`export_csv()`) — handy to backfill rows written straight to Supabase.
+  One row per conversation, ~17 columns (`outcome`, `failed`, `failure_signals`, `thumbs`,
+  `ticket_id`, `needed_by`, `due_date`, `first_user_question`, `last_assistant_message`, …).
+  Nothing reads it back; it's for eyeballing in a spreadsheet. `python -m core.chatlog`
+  rebuilds it from the primary store (`export_csv()`) — handy to backfill rows written
+  straight to Supabase.
 
 ### `db.py` — PostgreSQL persistence (opt-in)
 Only active when `DATABASE_URL` is set (`postgresql+psycopg://user:pass@host:5432/sugbodoc`).
@@ -292,11 +296,12 @@ same flow inline (it predates this module).
   👎 → rule-based failure capture, offer a ticket.
 - `tell_me_more(conv)` — back to `chat`.
 - `ticket_draft(conv)` — `ticketing.default_draft` (no model call) + `jira_dedup.find_duplicate`.
-- `submit_ticket(conv, *, email, subject, summary, category, needed_by="")` — `needed_by` is
-  a `YYYY-MM-DD` from the UI date picker; `ticketing.as_iso_date` validates it →
-  `conv.due_date`, `ticketing.urgency_for_date` derives the urgency, and both go to
-  `create_issue` along with `contact=email`. `link_duplicate(conv)` likewise. Both append
-  their confirmation message and return a full `_state(conv)`.
+- `submit_ticket(conv, *, email, subject, summary, category, needed_by="", name="")` —
+  `needed_by` is a `YYYY-MM-DD` from the UI date picker (`ticketing.as_iso_date` validates
+  → `conv.due_date`, `ticketing.urgency_for_date` → urgency); `name` is the submitter's
+  name. All go to `create_issue` (`contact=email`, `submitter_name=name`, `due_date`,
+  `urgency`). `link_duplicate(conv)` likewise. Both append their confirmation message and
+  return a full `_state(conv)`.
 - `log_abandoned(conv)` / `_log(conv, outcome)` — writes the `ConversationRecord`.
 - `serialize(conv) -> dict` / `deserialize(dict) -> Conversation` — plain JSON-able form
   (chat history included) that `service.py` stores in the `conversations` table.
@@ -445,13 +450,13 @@ product bug, keep it in Jira" verdict) plus an eval case to add first. Output:
 ### `analytics_kpis.py`
 No model calls. Containment (resolved without a ticket), ticket-filed rate,
 duplicate-linked rate, abandoned rate, thumbs-up rate, refusal rate, verification-pass
-catch rate, repeat-question rate, triage mix, ticket categories.
+catch rate, repeat-question rate, ticket categories.
 
 ---
 
 ## 7. Tests — `tests/`
 
-`pip install -r requirements-dev.txt && pytest`. 63 tests, **fully offline** (the
+`pip install -r requirements-dev.txt && pytest`. 64 tests, **fully offline** (the
 `conftest.py` fixture forces the mock backend and points every path — cache, chat log — at
 a `tmp_path`; the DB tests use a throwaway SQLite file, no server). Coverage:
 
@@ -463,12 +468,12 @@ a `tmp_path`; the DB tests use a throwaway SQLite file, no server). Coverage:
 | `test_chatlog.py` | JSONL round-trip, `.failed` / `.failed_user_questions()` |
 | `test_db.py` | chat-log round-trip via Postgres, `reset_store`, session persist/restore, `/healthz` store, drop-on-terminal |
 | `test_ticketing.py` | deterministic `default_draft`, `as_iso_date`, `urgency_for_date` |
-| `test_jira_client.py` | ADF structure, description fields, `duedate`/`reporter`/`urgency` mapping, drop-and-retry on a 400 |
+| `test_jira_client.py` | ADF structure, description fields, `duedate`/`urgency` mapping, name→`Submitter` (not `reporter`), custom-column ids resolved by name, drop-and-retry on a 400 |
 | `test_jira_dedup_and_kpis.py` | cosine properties, duplicate match, KPI run |
 | `test_llm.py` | cache hit-once, offline raises on miss / serves warm, `Chat` history, embed determinism |
 | `test_bot_and_grounding.py` | answer path, refusal path, verification short-circuit |
 | `test_eval_run.py` | bootstrap CI bounds, Cohen's κ, `run_case`, scorecard slices |
-| `test_service.py` | health, answer flow, greeting in `messages[0]`, terminal reply in `messages[-1]`, `/widget/config`, `/session` resume + 404-after-done, `/documentation` page, refusal→ticket, 404s, validation (FastAPI `TestClient`) |
+| `test_service.py` | health, answer flow, greeting in `messages[0]`, terminal reply in `messages[-1]`, `/widget/config`, `/session` resume + 404-after-done, `/documentation` page, ticket name/email/due-date pass-through, refusal→ticket, 404s, validation (FastAPI `TestClient`) |
 
 ---
 
@@ -480,7 +485,8 @@ a `tmp_path`; the DB tests use a throwaway SQLite file, no server). Coverage:
 | **Separate verification pass** instead of trusting one call | A model is bad at self-policing "I don't know". A cheap independent check catches hallucinations; its threshold is tuned on the eval set. |
 | **Rules** for failure detection, not a classifier | The refusal marker + a 👎 button catch most failures with zero ML. Train a model only once the logs show the rules missing failures. |
 | Jira is **outbound-only**; dedup is the sole read | Reading tickets per turn adds latency, a sync pipeline, and stale-status risk for no benefit. Jira reaches the bot only as `Jira → docs → bot`. |
-| Ticket type / category **suggested by the model, confirmed by a human** | Don't train a classifier for a field a person approves anyway; just track suggestion accuracy. |
+| Submitter identity goes to **plain-text custom columns**, not `reporter` | A chat user isn't a Jira account and `reporter` needs a strict accountId. Name/email land in `Submitter` / `Submitter Email` columns; `reporter` stays the API user, which flags the ticket as assistant-filed. |
+| Ticket draft + failure triage are **deterministic, not model calls** | Cut to hold the per-conversation LLM budget at *answer + one verification pass*. Subject seeds from the first question; the user fills the rest. |
 | **Evaluation before features** | Every prompt or docs change is judged against a frozen scorecard with CIs. Without this the project is unfalsifiable. |
 | A dedicated **"must refuse" eval slice** | The hallucination guard is only as good as its test set. |
 | **Response cache + mock backend** | Free-tier quota is ~20 requests/day/model. The cache makes eval re-runs free; the mock lets the whole system (and the test suite) run with no key at all. |
@@ -528,9 +534,9 @@ grounding, fine-tuning, TextTiling for doc segmentation.
 - **Clustering needs volume** — HDBSCAN is meaningful at a few hundred failed
   conversations, not the ~11 in the seeded demo (it currently collapses them to one group).
 - **Sessions**: in-memory by default; set `DATABASE_URL` for the Postgres-backed
-  `conversations` / `chat_logs` tables (`db.py`, `db_init.py`). No connection pooling tuning,
-  no Alembic migrations yet — `db_init.py` / `schema.sql` create the schema outright
-  traffic.
+  `conversations` / `chat_logs` tables (`db.py`, `db_init.py`). The engine has
+  `pool_pre_ping` + `pool_recycle` and `_run()` retries a dropped pooler connection once,
+  but there are no Alembic migrations — `db_init.py` / `schema.sql` create the schema outright.
 - **No auth / rate limiting / PII redaction** on `service.py` yet — see the docstring.
 - `app.py` could be refactored onto `engine.py` to remove the duplicated flow.
 - The verification pass doubles per-turn latency and cost — worth A/B-ing a
@@ -542,7 +548,7 @@ grounding, fine-tuning, TextTiling for doc segmentation.
 
 ```
 pip install -r requirements-dev.txt
-pytest                                        # 63 tests, offline, ~2s
+pytest                                        # 64 tests, offline, ~2s
 
 cp .env.example .env                          # add GEMINI_API_KEY
 python -m evaluation.eval_run --limit 10      # sanity-check the real model

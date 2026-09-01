@@ -5,7 +5,8 @@
 chapters.txt
 transcript.txt
 
-# knowledge base + hand-written prompt (kept out of git in this repo)
+# full knowledge base + hand-written prompt (private). The committed
+# docs/SugboDoc-Documentation.sample.md excerpt is the fallback (config.DOCS_PATH).
 docs/SugboDoc-Documentation.md
 docs/system-prompt.md
 
@@ -14,6 +15,7 @@ docs/homepage-reference.png
 
 # generated at runtime
 __pycache__/
+*.egg-info/
 .pytest_cache/
 *.sqlite
 *.db

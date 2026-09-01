@@ -1,5 +1,8 @@
 # SugboDoc Support Assistant
 
+<!-- update OWNER/REPO once pushed -->
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
 A documentation-grounded support chatbot for **SugboDoc**, a clinic / practice-management
 SaaS. It answers user questions strictly from the product docs, verifies its own answers
 against those docs, refuses cleanly when it can't help, and turns the failures into a
@@ -7,6 +10,11 @@ docs-improvement loop (failure clustering → drafted doc changes → an eval ga
 
 Full walkthrough — every module and key function — is in **[`docs/PROJECT.md`](docs/PROJECT.md)**.
 Design rationale and diagrams are in **[`docs/SugboDoc-Chatbot-Flowchart.md`](docs/SugboDoc-Chatbot-Flowchart.md)**.
+
+> **Knowledge base.** The repo ships a trimmed public excerpt at
+> `docs/SugboDoc-Documentation.sample.md` so everything runs out of the box. Drop the full
+> document at `docs/SugboDoc-Documentation.md` (git-ignored) to use it instead —
+> `config.DOCS_PATH` picks it up automatically.
 
 ## Project layout
 
@@ -44,8 +52,9 @@ analytics/   the maintenance side (no per-request calls)
 
 scripts/     operator utilities  (llm_cache.py, jira_check.py, jira_test_ticket.py)
 web/         index.html — SugboDoc dashboard mockup + floating chat widget
-docs/        PROJECT.md, the flowchart, the knowledge base
-tests/       50 offline pytest tests (mock backend, tmp paths, throwaway SQLite)
+docs/        PROJECT.md, the flowchart, the knowledge base (sample excerpt)
+tests/       64 offline pytest tests (mock backend, tmp paths, throwaway SQLite)
+.github/workflows/ci.yml   runs the suite on every push / PR
 ```
 
 Modules live in packages; run scripts with `python -m <package>.<module>` (they also work
@@ -55,8 +64,8 @@ as plain files, e.g. `python analytics/seed_demo_log.py`). `config.py` stays at 
 ## Quickstart
 
 ```bash
-pip install -r requirements-dev.txt
-pytest                                   # 50 tests, fully offline (~2s)
+pip install -r requirements-dev.txt -r requirements-service.txt   # or:  pip install -e ".[dev,service]"
+pytest                                   # 64 tests, fully offline (~2s) — no keys needed
 
 cp .env.example .env                     # add GEMINI_API_KEY (+ JIRA_* for ticketing)
 streamlit run app.py                     #  or:  LLM_BACKEND=mock streamlit run app.py
