@@ -1,5 +1,5 @@
 import config
-import knowledge
+from core import knowledge
 
 
 def test_sections_parse():

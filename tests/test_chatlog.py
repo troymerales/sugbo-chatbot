@@ -1,5 +1,5 @@
-import chatlog
-from chatlog import ConversationRecord
+from core import chatlog
+from core.chatlog import ConversationRecord
 
 
 def _rec(**kw):

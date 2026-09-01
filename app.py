@@ -24,15 +24,17 @@ from __future__ import annotations
 
 import streamlit as st
 
-import bot
-import chatlog
 import config
-import failure_capture
-import jira_client
-import jira_dedup
-import knowledge
-import ticketing
-from llm import QuotaError
+from core import (
+    bot,
+    chatlog,
+    failure_capture,
+    jira_client,
+    jira_dedup,
+    knowledge,
+    ticketing,
+)
+from core.llm import QuotaError
 
 st.set_page_config(page_title="SugboDoc Support", page_icon="🩺")
 st.title("🩺 SugboDoc Support Assistant")

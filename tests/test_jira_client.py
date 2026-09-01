@@ -1,4 +1,4 @@
-import jira_client
+from core import jira_client
 
 
 def test_adf_paragraph_per_line():

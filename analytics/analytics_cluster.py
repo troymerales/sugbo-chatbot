@@ -7,11 +7,18 @@ them with HDBSCAN, label each cluster with the model, score it by impact
 doc-gap queue that the docs-maintenance loop (docs_loop.py) consumes.
 
 Usage:
-    python analytics_cluster.py
-    python analytics_cluster.py --min-cluster-size 2
+    python -m analytics.analytics_cluster
+    python -m analytics.analytics_cluster --min-cluster-size 2
 """
 
 from __future__ import annotations
+
+# Allow `python analytics/analytics_cluster.py` as well as `python -m ...`.
+if not __package__:
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
 import json
@@ -20,11 +27,9 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
-import cli
 import config
-import chatlog
-import knowledge
-from llm import LLMError, QuotaError, embed, generate
+from core import chatlog, cli, knowledge
+from core.llm import LLMError, QuotaError, embed, generate
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)

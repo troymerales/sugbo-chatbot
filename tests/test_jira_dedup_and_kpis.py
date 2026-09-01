@@ -1,6 +1,5 @@
-import chatlog
-import jira_dedup
-from chatlog import ConversationRecord
+from core import chatlog, jira_dedup
+from core.chatlog import ConversationRecord
 
 
 def test_cosine_properties():
@@ -29,7 +28,7 @@ def test_find_duplicate_matches_similar_ticket(monkeypatch):
 
 
 def test_kpis_run_on_seeded_log(capsys, monkeypatch):
-    import analytics_kpis
+    from analytics import analytics_kpis
     monkeypatch.setattr("sys.argv", ["analytics_kpis.py"])
     chatlog.append(ConversationRecord(
         conversation_id="c1", started_at="2026-08-01T00:00:00+00:00",

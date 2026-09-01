@@ -13,13 +13,23 @@ eval_set.jsonl, then scores each answer three ways:
 Outputs eval_scorecard.md + eval_scorecard.json. Re-run on every prompt / docs
 change and compare against the committed scorecard.
 
+Runs identically in full-context and RAG modes (`config.USE_RAG`) — the mode is
+recorded on the scorecard.
+
 Usage:
-    python eval_run.py
-    python eval_run.py --limit 10
-    python eval_run.py --calibrate eval_labels.csv     # judge vs human, Cohen's kappa
+    python -m evaluation.eval_run
+    python -m evaluation.eval_run --limit 10
+    python -m evaluation.eval_run --calibrate eval_labels.csv   # judge vs human, kappa
 """
 
 from __future__ import annotations
+
+# Allow `python evaluation/eval_run.py` as well as `python -m evaluation.eval_run`.
+if not __package__:
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
 import csv
@@ -30,11 +40,9 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-import bot
-import cli
 import config
-import knowledge
-from llm import LLMError, QuotaError, generate
+from core import bot, cli, knowledge
+from core.llm import LLMError, QuotaError, generate
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
@@ -204,6 +212,7 @@ class Scorecard:
     judge_model: str
     n_cases: int
     backend: str = "gemini"
+    retrieval: str = "full-context"
     metrics: dict = field(default_factory=dict)
     cases: list[dict] = field(default_factory=list)
 
@@ -248,6 +257,7 @@ def build_scorecard(results: list[CaseResult]) -> Scorecard:
         judge_model=config.JUDGE_MODEL,
         n_cases=len(results),
         backend=config.LLM_BACKEND,
+        retrieval=f"RAG (top-{config.RAG_TOP_K})" if config.USE_RAG else "full-context",
         metrics=metrics,
     )
     card.cases = [
@@ -279,6 +289,7 @@ def write_scorecard(card: Scorecard) -> None:
         + ("  ⚠️ **mock backend — plumbing check only, not a quality measurement**"
            if card.backend == "mock" else ""),
         f"- Answer model: `{card.answer_model}`  ·  Judge model: `{card.judge_model}`",
+        f"- Retrieval: `{card.retrieval}`",
         f"- Cases: **{card.n_cases}**",
         "",
         "## Headline",

@@ -1,5 +1,5 @@
 import config
-import failure_capture as fc
+from core import failure_capture as fc
 
 
 def _msgs(*turns):

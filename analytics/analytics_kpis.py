@@ -5,17 +5,24 @@ Reads logs/chats.jsonl and prints the containment / quality metrics you'd track
 week over week. No model calls — pure aggregation.
 
 Usage:
-    python analytics_kpis.py
-    python analytics_kpis.py --since 2026-08-01
+    python -m analytics.analytics_kpis
+    python -m analytics.analytics_kpis --since 2026-08-01
 """
 
 from __future__ import annotations
+
+# Allow `python analytics/analytics_kpis.py` as well as `python -m ...`.
+if not __package__:
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
 import sys
 from collections import Counter
 
-import chatlog
+from core import chatlog
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)

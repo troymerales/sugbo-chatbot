@@ -4,10 +4,11 @@ The knowledge base: SugboDoc-Documentation.md.
 Loads the docs, splits them into sections (by `##` / `###` headings) for citation
 and eval matching, and assembles the system prompt the answer model runs with.
 
-The whole doc goes in the prompt every turn — it is ~8k tokens and fits
-comfortably. No chunking, no embeddings, no retrieval (see §0 of the architecture
-doc). This module is where that decision lives, so swapping in section-level
-retrieval later is a local change.
+By default the whole doc goes in the prompt every turn — it is ~8k tokens and
+fits comfortably. Set `config.USE_RAG=True` (env `USE_RAG=1`) to switch to
+section-level retrieval instead: `system_prompt(query=...)` then returns only the
+top-K relevant sections (see `core/retrieval.py`). Either way this module is the
+single place that decision lives.
 """
 
 from __future__ import annotations
@@ -125,11 +126,30 @@ sentence and nothing else that contradicts it:
 """
 
 
+_DOC_OPEN = "===== SUGBODOC DOCUMENTATION =====\n\n"
+_DOC_CLOSE = "\n\n===== END DOCUMENTATION ====="
+
+
 @functools.lru_cache(maxsize=1)
-def system_prompt() -> str:
-    return (
-        f"{PERSONA}\n\n"
-        "===== SUGBODOC DOCUMENTATION =====\n\n"
-        f"{load_docs()}\n\n"
-        "===== END DOCUMENTATION ====="
-    )
+def _full_doc_prompt() -> str:
+    return f"{PERSONA}\n\n{_DOC_OPEN}{load_docs()}{_DOC_CLOSE}"
+
+
+def _rag_prompt(query: str) -> str:
+    from core import retrieval  # local import: only needed in RAG mode
+
+    secs = retrieval.top_sections(query)
+    body = "\n\n".join(f"## {s.title}\n{s.body}" for s in secs)
+    note = f"(Retrieved the {len(secs)} sections most relevant to the question.)\n\n"
+    return f"{PERSONA}\n\n{_DOC_OPEN}{note}{body}{_DOC_CLOSE}"
+
+
+def system_prompt(query: str | None = None) -> str:
+    """The answer model's system prompt.
+
+    Full docs by default. When `config.USE_RAG` is on and a `query` is given,
+    only the top-K retrieved sections are included instead.
+    """
+    if config.USE_RAG and query:
+        return _rag_prompt(query)
+    return _full_doc_prompt()

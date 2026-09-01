@@ -7,18 +7,25 @@ No model calls — hand-written records. Includes clusters of similar failures
 to find.
 
 Usage:
-    python seed_demo_log.py            # append
-    python seed_demo_log.py --reset    # wipe the log first
+    python -m analytics.seed_demo_log            # append
+    python -m analytics.seed_demo_log --reset    # wipe the log first
 """
 
 from __future__ import annotations
+
+# Allow `python analytics/seed_demo_log.py` as well as `python -m ...`.
+if not __package__:
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
 from datetime import datetime, timedelta, timezone
 
 import config
-import chatlog
-from chatlog import ConversationRecord
+from core import chatlog
+from core.chatlog import ConversationRecord
 
 
 def _c(days_ago: int, **kw) -> ConversationRecord:
@@ -147,15 +154,18 @@ def main() -> None:
     ap.add_argument("--reset", action="store_true")
     args = ap.parse_args()
 
-    if args.reset and config.CHAT_LOG_PATH.exists():
-        config.CHAT_LOG_PATH.unlink()
-        print(f"wiped {config.CHAT_LOG_PATH.name}")
+    dest = "chat_logs table" if config.DATABASE_URL else str(config.CHAT_LOG_PATH)
+
+    if args.reset:
+        chatlog.reset_store()
+        print(f"wiped {dest}")
 
     convs = build()
     for c in convs:
         chatlog.append(c)
-    print(f"appended {len(convs)} synthetic conversations to {config.CHAT_LOG_PATH}")
-    print("now try:  python analytics_kpis.py   and   python analytics_cluster.py")
+    print(f"appended {len(convs)} synthetic conversations to {dest}")
+    print("now try:  python -m analytics.analytics_kpis   and   "
+          "python -m analytics.analytics_cluster")
 
 
 if __name__ == "__main__":

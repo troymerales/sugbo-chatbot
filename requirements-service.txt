@@ -1,4 +1,6 @@
-# the FastAPI backend (service.py)
+# the FastAPI backend (service.py) + PostgreSQL session/chat-log persistence
 -r requirements.txt
 fastapi>=0.110
 uvicorn[standard]>=0.29
+SQLAlchemy>=2.0
+psycopg[binary]>=3.1        # PostgreSQL driver — URL scheme: postgresql+psycopg://

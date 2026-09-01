@@ -8,9 +8,9 @@ Reads JIRA_* from .env (same vars app.py uses), then:
      REQUIRED and which have a default
 
 Run:
-    python jira_check.py
-    python jira_check.py --all-types      # show fields for every issue type
-    python jira_check.py --create-test    # actually create a throwaway issue
+    python -m scripts.jira_check
+    python -m scripts.jira_check --all-types      # fields for every issue type
+    python -m scripts.jira_check --create-test    # actually create a throwaway issue
 """
 
 from __future__ import annotations

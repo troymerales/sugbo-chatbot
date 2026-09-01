@@ -10,23 +10,28 @@ review, edit, and merge into SugboDoc-Documentation.md.
 This is the only path from Jira back to the bot:  Jira -> docs -> bot.
 
 Usage:
-    python docs_loop.py                 # top 3 gaps
-    python docs_loop.py --top 5
-    python docs_loop.py --no-jira       # skip the resolved-issues pull
+    python -m analytics.docs_loop              # top 3 gaps
+    python -m analytics.docs_loop --top 5
+    python -m analytics.docs_loop --no-jira    # skip the resolved-issues pull
 """
 
 from __future__ import annotations
+
+# Allow `python analytics/docs_loop.py` as well as `python -m analytics.docs_loop`.
+if not __package__:
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
 import json
 import sys
 from datetime import datetime, timezone
 
-import cli
 import config
-import chatlog
-import knowledge
-from llm import LLMError, QuotaError, generate
+from core import chatlog, cli, knowledge
+from core.llm import LLMError, QuotaError, generate
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
@@ -113,7 +118,7 @@ def main() -> None:
     resolved_block = ""
     if not args.no_jira:
         try:
-            import jira_client
+            from core import jira_client
             if jira_client.jira_configured():
                 issues = jira_client.list_resolved_issues(days=60)
                 if issues:
@@ -159,8 +164,9 @@ def main() -> None:
         print(f"    wrote {path.relative_to(config.ROOT)}")
 
     print(
-        "\nNext: review each proposal, add its eval case to eval_set.jsonl, then run\n"
-        "  python eval_run.py\n"
+        "\nNext: review each proposal, add its eval case to evaluation/eval_set.jsonl,\n"
+        "then run\n"
+        "  python -m evaluation.eval_run\n"
         "and only merge the doc change if the scorecard doesn't regress."
     )
 

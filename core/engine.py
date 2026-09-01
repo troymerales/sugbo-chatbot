@@ -15,14 +15,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import bot
-import chatlog
 import config
-import failure_capture
-import jira_client
-import jira_dedup
-import llm
-import ticketing
+from core import (
+    bot,
+    chatlog,
+    failure_capture,
+    jira_client,
+    jira_dedup,
+    llm,
+    ticketing,
+)
 
 
 @dataclass
@@ -49,7 +51,10 @@ class Conversation:
         )
 
 
-GREETING = "Hi! I'm the SugboDoc support assistant. What can I help you with today?"
+GREETING = (
+    "Hi! I'm the SugboDoc support assistant. Ask me about scheduling, patients, "
+    "encounters, billing or immunizations."
+)
 
 
 def start(conversation_id: str | None = None) -> Conversation:
@@ -145,16 +150,25 @@ def submit_ticket(conv: Conversation, *, email: str, subject: str, summary: str,
     )
     conv.ticket_id = key
     conv.ticket_category = category
+    url = jira_client.browse_url(key)
     conv.messages.append({
         "role": "assistant",
-        "content": f"Ticket {key} created in Jira. Our team will follow up at {email}.",
+        "content": (
+            f"✅ Ticket **{key}** created in Jira — [open it]({url}). "
+            f"Our team will follow up at **{email}**."
+        ),
     })
     conv.stage = "done"
     _log(conv, "ticket_filed")
-    return {"ticket_id": key, "url": jira_client.browse_url(key)}
+    return _state(conv, extra={"ticket_id": key, "url": url})
 
 
 def link_duplicate(conv: Conversation) -> dict:
+    ref = f" **{conv.duplicate_of}**" if conv.duplicate_of else ""
+    conv.messages.append({
+        "role": "assistant",
+        "content": f"Linked you to the existing ticket{ref} — the team is already tracking it.",
+    })
     conv.stage = "done"
     _log(conv, "linked_duplicate")
     return _state(conv)
@@ -205,3 +219,54 @@ def _log(conv: Conversation, outcome: str) -> None:
 def log_abandoned(conv: Conversation) -> None:
     if not conv.logged and conv.question_count > 0:
         _log(conv, "abandoned")
+
+
+# --------------------------------------------------------------------------- #
+# Persistence  (service.py stores this blob in the `conversations` table when a
+# DATABASE_URL is configured — everything here is plain JSON-able data)
+# --------------------------------------------------------------------------- #
+
+def serialize(conv: Conversation) -> dict:
+    return {
+        "id": conv.id,
+        "chat": {
+            "system": conv.chat.system,
+            "model": conv.chat.model,
+            "temperature": conv.chat.temperature,
+            "history": conv.chat.history,
+        },
+        "started_at": conv.started_at,
+        "messages": conv.messages,
+        "question_count": conv.question_count,
+        "stage": conv.stage,
+        "grounding_checks": conv.grounding_checks,
+        "failure_signals": conv.failure_signals,
+        "triage": conv.triage,
+        "thumbs": conv.thumbs,
+        "ticket_id": conv.ticket_id,
+        "ticket_category": conv.ticket_category,
+        "duplicate_of": conv.duplicate_of,
+        "logged": conv.logged,
+    }
+
+
+def deserialize(data: dict) -> Conversation:
+    c = data["chat"]
+    return Conversation(
+        id=data["id"],
+        chat=llm.Chat(system=c["system"], model=c["model"],
+                      temperature=c.get("temperature", 0.2),
+                      history=list(c.get("history", []))),
+        started_at=data["started_at"],
+        messages=list(data.get("messages", [])),
+        question_count=data.get("question_count", 0),
+        stage=data.get("stage", "chat"),
+        grounding_checks=list(data.get("grounding_checks", [])),
+        failure_signals=list(data.get("failure_signals", [])),
+        triage=data.get("triage"),
+        thumbs=data.get("thumbs"),
+        ticket_id=data.get("ticket_id"),
+        ticket_category=data.get("ticket_category"),
+        duplicate_of=data.get("duplicate_of"),
+        logged=data.get("logged", False),
+    )

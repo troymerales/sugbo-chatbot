@@ -43,21 +43,24 @@ Two constraints drive every choice:
 
 ---
 
-## 0. Architecture decision — the docs fit in context, so there is no retrieval
+## 0. Architecture decision — the docs fit in context, so RAG is opt-in
 
-`SugboDoc-Documentation.md` is ~8k tokens. Any local model worth using has an 8k+ context
-window. So the whole doc goes in the prompt, every turn. **No chunking, no embeddings, no
-vector store, no RAG** — until the docs grow past roughly a quarter of the model's context
-budget.
+`SugboDoc-Documentation.md` is ~8k tokens. Any model worth using has an 8k+ context window.
+So by default the whole doc goes in the prompt, every turn — **no chunking, no vector
+store**. A `USE_RAG=1` toggle (`core/retrieval.py`) switches the *answer* prompt to
+embedding-cosine section retrieval (top-`RAG_TOP_K`); the verification pass and the eval
+judge still see the full docs, so the two modes are interchangeable and the eval scorecard
+records which one produced it. Turn it on around 5–10× the current doc size.
 
 ```mermaid
 flowchart TD
     Q[How big are the docs?] --> A{Fit comfortably in<br/>the model context?}
-    A -->|yes — today| F1[Full doc in prompt<br/>no retrieval]
-    A -->|later, if docs 5–10x| F2[Add section-level retrieval<br/>BM25 + local embeddings]
+    A -->|yes — default| F1[Full doc in prompt<br/>no retrieval]
+    A -->|USE_RAG=1 / docs 5–10x| F2[Top-K section retrieval<br/>llm.embed + cosine]
     F1 --> GEN[Gemini — grounded answer]
     F2 --> GEN
-    GEN --> EVAL[Evaluation harness<br/>unchanged either way]
+    GEN --> VER[Verification pass + eval judge<br/>always see the full docs]
+    VER --> EVAL[Evaluation harness<br/>scores both modes]
 
     style F1 fill:#2f855a,stroke:#1a4731,color:#fff
     style EVAL fill:#2b6cb0,stroke:#1a365d,color:#fff
@@ -306,7 +309,7 @@ repeat-question rate).
 | Not used | Textbook reason to use it | Why it loses here |
 |---|---|---|
 | **Per-request Jira retrieval / RAG over tickets** | "Feed operational context into every answer" | The bot answers from docs; tickets are a *write* target. Reading tickets per turn adds latency, a sync pipeline, and stale-status risk for zero benefit. Jira reaches the bot only via **Jira → docs → bot**. |
-| Vector DB for the docs (today) | "RAG needs embeddings" | Docs are ~8k tokens — the whole thing fits in the prompt. Retrieval only adds a missed-chunk failure mode. Revisit at ~5–10× the size. |
+| Vector DB for the docs (default) | "RAG needs embeddings" | Docs are ~8k tokens — the whole thing fits in the prompt. `USE_RAG=1` enables a lightweight local retrieval path (`llm.embed` + cosine, no ChromaDB/FAISS needed) for when the corpus grows; the eval harness scores both modes. |
 | Dissatisfaction / sentiment classifier (day one) | Detect failed chats | The bot's own refusal + a thumbs-down button catch most failures with zero ML. Train a classifier only once rules are demonstrably missing failures. |
 | Classifier for suggested Jira issue type | Auto-file with the right type | Let the LLM suggest it in the draft; the reviewer corrects it. Track accuracy, don't train a model for a field a human approves anyway. |
 | Cross-encoder reranker | Best-in-class reranking | Nothing to rerank — no retrieval in the inference path. |
@@ -374,55 +377,63 @@ docs.
 
 ## 12. As built — file map
 
-Every stage above is implemented. Flat module layout so imports "just work" on Windows.
-**`PROJECT.md` is the detailed walkthrough** (every file + key functions); this is the index.
+Every stage above is implemented. Package layout: `core/` (library), `api/` (FastAPI +
+Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at the root.
+**`docs/PROJECT.md` is the detailed walkthrough** (every file + key functions); this is the index.
 
-### Core library (imported by everything)
+### `core/` — the library (imported by everything)
 
 | File | Responsibility | Stage |
 |---|---|---|
-| `config.py` | Paths, model names, thresholds, backend switches, one-time `.env` load | — |
-| `llm.py` | The one model interface: `generate`, `new_chat`/`Chat.send`, `embed`; SQLite response cache; offline mode; quota-aware `retry` + `QuotaError` | — |
-| `_gemini_backend.py` | Real Gemini SDK calls (lazy-imported by `llm.py`) | — |
-| `_mock_backend.py` | Offline deterministic stand-in — no API key / quota | — |
-| `knowledge.py` | Load docs, split into 60+ `Section`s, assemble the system prompt | §0, §5 |
-| `bot.py` | `respond()` — the one answer path: answer model → verification → refuse-or-answer | §1 |
-| `grounding.py` | The verification pass (`verify()` → `GroundingVerdict`) | §1 |
-| `failure_capture.py` | Rule-based `detect_failures()` + model `triage()` | §2 |
-| `ticketing.py` | `draft_ticket()` — conversation → `{subject, category, summary}` | §3 |
-| `jira_client.py` | Outbound `create_issue()`; batch reads `list_recent_open_issues` / `list_resolved_issues` | §3, §4 |
-| `jira_dedup.py` | `find_duplicate()` — embed draft vs open tickets, cosine (the one Jira read) | §3 |
-| `chatlog.py` | Append/load `logs/chats.jsonl` — one record per finished conversation | feeds §6, §7 |
-| `engine.py` | UI-independent conversation state machine (`chat → feedback → offer_ticket → done`) | §1–§3 |
-| `cli.py` | Shared `--mock` / `--offline` / `--no-cache` flags for the batch scripts | — |
+| `config.py` *(root)* | Paths, model names, thresholds, feature toggles (`USE_RAG`, `LLM_BACKEND`, `DATABASE_URL`), one-time `.env` load | — |
+| `core/llm.py` | The one model interface: `generate`, `new_chat`/`Chat.send`, `embed`; SQLite response cache; offline mode; quota-aware `retry` + `QuotaError` | — |
+| `core/_gemini_backend.py` | Real Gemini SDK calls (lazy-imported by `llm.py`) | — |
+| `core/_mock_backend.py` | Offline deterministic stand-in — no API key / quota | — |
+| `core/knowledge.py` | Load docs, split into 60+ `Section`s, assemble the system prompt (full docs, or RAG sections) | §0, §5 |
+| `core/retrieval.py` | `USE_RAG` mode: embed sections (`llm.embed`) + cosine rank → top-K | §0 |
+| `core/bot.py` | `respond()` — the one answer path: (RAG re-ground) → answer model → verification → refuse-or-answer | §1 |
+| `core/grounding.py` | The verification pass (`verify()` → `GroundingVerdict`), always vs full docs | §1 |
+| `core/failure_capture.py` | Rule-based `detect_failures()` + model `triage()` | §2 |
+| `core/ticketing.py` | `draft_ticket()` — conversation → `{subject, category, summary}` | §3 |
+| `core/jira_client.py` | Outbound `create_issue()`; batch reads `list_recent_open_issues` / `list_resolved_issues` | §3, §4 |
+| `core/jira_dedup.py` | `find_duplicate()` — embed draft vs open tickets, cosine (the one Jira read) | §3 |
+| `core/chatlog.py` | Append/load finished conversations — `logs/chats.jsonl`, or the `chat_logs` table when `DATABASE_URL` is set; + `logs/chats.csv` mirror | feeds §6, §7 |
+| `api/db.py` | SQLAlchemy engine + `conversations` / `chat_logs` models — opt-in Postgres persistence for `api/service.py` | §1–§3 |
+| `api/db_init.py` / `api/schema.sql` | Create / check / reset the DB schema | setup |
+| `core/engine.py` | UI-independent conversation state machine (`chat → feedback → offer_ticket → done`); `serialize()` / `deserialize()` for the session store | §1–§3 |
+| `core/cli.py` | Shared `--mock` / `--offline` / `--no-cache` flags for the batch scripts | — |
 
 ### Entry points
 
 | Command | What it does | Stage |
 |---|---|---|
 | `streamlit run app.py` | Streamlit demo UI: full inference path + feedback loop + modal ticket flow + logging | §1–§3 |
-| `uvicorn service:app` | FastAPI backend (JSON API + bundled `web/index.html` widget) — the "ship to a website" path | §1–§3 |
-| `python eval_run.py` | Run the pipeline over `eval_set.jsonl`, LLM-judge, write `eval_scorecard.md/.json` (bootstrap CIs). `--calibrate` → Cohen's κ; `--no-judge` / `--mock` / `--offline` | §6 |
-| `python eval_gen.py` | Draft synthetic eval questions from each doc section → `eval_generated.jsonl` (review before merging) | §6 |
-| `python analytics_kpis.py` | Containment / thumbs / refusal / repeat-question KPIs from the log (no model calls) | §7 |
-| `python analytics_cluster.py` | Embed failed questions → HDBSCAN → label → impact score → `logs/doc_gap_queue.json` | §7 |
-| `python docs_loop.py` | Top gaps + resolved Jira → model drafts a doc change → `doc_proposals/` | §4 |
-| `python seed_demo_log.py` | Write synthetic conversations so the analytics/loop scripts are demoable with no traffic | — |
-| `python llm_cache.py` | Inspect / `--clear` the response cache | — |
-| `python jira_check.py` | Standalone connectivity + createmeta field check (`--create-test` files a throwaway) | setup |
-| `pytest` | 40 offline tests (mock backend, tmp paths) | — |
+| `uvicorn api.service:app` | FastAPI backend — serves the dashboard mockup + floating chat widget (`/`), a markdown docs viewer with section nav (`/documentation`), and the JSON API (`/chat`, `/feedback`, `/tell-me-more`, `/ticket*`, `GET\|DELETE /session/{id}`, `/widget/config`, `/healthz`). Sessions in memory, or Postgres if `DATABASE_URL` is set. Widget shows the greeting on open and renders every reply by diffing `state.messages` | §1–§3 |
+| `python -m api.db_init` | Create the `conversations` / `chat_logs` schema (`--check`, `--drop`) | setup |
+| `python -m evaluation.eval_run` | Run the pipeline over `eval_set.jsonl`, LLM-judge, write `eval_scorecard.md/.json` (bootstrap CIs; records full-context vs RAG). `--calibrate` → Cohen's κ; `--no-judge` / `--mock` / `--offline` | §6 |
+| `python -m evaluation.eval_gen` | Draft synthetic eval questions from each doc section → `evaluation/eval_generated.jsonl` | §6 |
+| `python -m analytics.analytics_kpis` | Containment / thumbs / refusal / repeat-question KPIs from the log (no model calls) | §7 |
+| `python -m analytics.analytics_cluster` | Embed failed questions → HDBSCAN → label → impact score → `logs/doc_gap_queue.json` | §7 |
+| `python -m analytics.docs_loop` | Top gaps + resolved Jira → model drafts a doc change → `doc_proposals/` | §4 |
+| `python -m analytics.seed_demo_log` | Write synthetic conversations so the analytics/loop scripts are demoable | — |
+| `python -m scripts.llm_cache` | Inspect / `--clear` the response cache | — |
+| `python -m core.chatlog` | Rebuild `logs/chats.csv` from the primary store (a flat CSV mirror is also written on every log) | — |
+| `python -m scripts.jira_check` | Standalone connectivity + createmeta field check (`--create-test` files a throwaway) | setup |
+| `pytest` | 53 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
 
 ### Data files
 
 | File | Tracked? | Notes |
 |---|---|---|
-| `SugboDoc-Documentation.md` | gitignored | the single source of truth |
-| `system-prompt.md` | gitignored | original prompt (see note below) |
-| `eval_set.jsonl` | yes | 90 hand-authored cases; 61 answerable + 29 must-refuse |
-| `eval_scorecard.md` | yes | committed baseline — diff it on every prompt/docs change (marks the backend; a `mock` card is a plumbing check, not a score) |
-| `eval_scorecard.json` | gitignored | machine-readable scorecard + per-case detail |
-| `web/index.html` | yes | the demo chat widget `service.py` serves |
-| `logs/chats.jsonl` | gitignored | append-only conversation log |
+| `docs/SugboDoc-Documentation.md` | gitignored | the single source of truth |
+| `docs/system-prompt.md` | gitignored | original prompt (see note below) |
+| `evaluation/eval_set.jsonl` | yes | 90 hand-authored cases; 61 answerable + 29 must-refuse |
+| `evaluation/eval_scorecard.md` | yes | committed baseline — diff it on every prompt/docs change (marks backend + retrieval mode; a `mock` card is a plumbing check, not a score) |
+| `evaluation/eval_scorecard.json` | gitignored | machine-readable scorecard + per-case detail |
+| `web/index.html` | yes | static SugboDoc dashboard mockup + floating chat widget, served by `api/service.py` |
+| `logs/chats.jsonl` | gitignored | append-only conversation log (unless `DATABASE_URL` → `chat_logs` table) |
+| `logs/chats.csv` | gitignored | flat one-row-per-conversation mirror, written on every log regardless of store |
+| `api/schema.sql` | yes | raw DDL for the Postgres backend — mirror of `api/db.py` |
 | `logs/llm_cache.sqlite` | gitignored | response cache (warm it once, then `--offline`) |
 | `logs/doc_gap_queue.json` | gitignored | impact-ranked output of `analytics_cluster.py` |
 | `doc_proposals/*.md` | gitignored | draft doc changes for human review |
@@ -431,7 +442,7 @@ Every stage above is implemented. Flat module layout so imports "just work" on W
 
 ```mermaid
 flowchart LR
-    APP[app.py] -->|every conversation| LOG[(logs/chats.jsonl)]
+    APP[app.py / service.py] -->|every conversation| LOG[(chat log — chats.jsonl or chat_logs table)]
     LOG --> KPI[analytics_kpis.py]
     LOG --> CLU[analytics_cluster.py] --> Q[(doc_gap_queue.json)]
     JIRA[resolved Jira issues] --> DL[docs_loop.py]
@@ -450,20 +461,28 @@ flowchart LR
 
 ```
 pip install -r requirements-dev.txt
-pytest                              # 40 offline tests (~1s)
+pytest                                   # 53 offline tests (~2s)
 
-cp .env.example .env                # add GEMINI_API_KEY (+ JIRA_* for ticketing)
-streamlit run app.py               #  or:  LLM_BACKEND=mock streamlit run app.py
+cp .env.example .env                     # add GEMINI_API_KEY (+ JIRA_* for ticketing)
+streamlit run app.py                     #  or:  LLM_BACKEND=mock streamlit run app.py
 
 # offline demo of the maintenance side (no API needed with --mock):
-python seed_demo_log.py
-python analytics_kpis.py
-python analytics_cluster.py --mock
-python docs_loop.py --mock
+python -m analytics.seed_demo_log
+python -m analytics.analytics_kpis
+python -m analytics.analytics_cluster --mock
+python -m analytics.docs_loop --mock
 
-# the JSON backend for embedding in a website:
+# the JSON backend + dashboard mockup + widget:
 pip install -r requirements-service.txt
-uvicorn service:app --reload        #  http://127.0.0.1:8000
+uvicorn api.service:app --reload         #  http://127.0.0.1:8000  (sessions in memory)
+
+# ...or persist sessions + chat logs to PostgreSQL:
+export DATABASE_URL=postgresql://user:pass@localhost:5432/sugbodoc
+python -m api.db_init                    # create conversations + chat_logs
+uvicorn api.service:app --reload
+
+# try RAG mode:
+USE_RAG=1 python -m evaluation.eval_run --mock --no-judge --limit 10
 ```
 
 **Free-tier note:** Gemini caps requests/day per model. `eval_run.py` is ~2 calls/case

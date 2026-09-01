@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 import config
-from llm import LLMError, QuotaError, generate
+from core.llm import LLMError, QuotaError, generate
 
 TriageLabel = Literal["docs_gap", "product_bug", "out_of_scope"]
 

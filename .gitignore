@@ -1,18 +1,24 @@
 .env
+# local Claude Code MCP config (project-specific)
+.mcp.json
 
 chapters.txt
 transcript.txt
 
-SugboDoc-Documentation.md
+# knowledge base + hand-written prompt (kept out of git in this repo)
+docs/SugboDoc-Documentation.md
+docs/system-prompt.md
 
-system-prompt.md
+# design reference screenshot (not part of the deliverable)
+docs/homepage-reference.png
 
 # generated at runtime
 __pycache__/
 .pytest_cache/
 *.sqlite
+*.db
 logs/
 doc_proposals/
-eval_generated.jsonl
-eval_scorecard.json
+evaluation/eval_generated.jsonl
+evaluation/eval_scorecard.json
 tickets.csv

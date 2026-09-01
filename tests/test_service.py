@@ -4,12 +4,12 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-import service  # noqa: E402
+from api import service  # noqa: E402
 
 
 @pytest.fixture
 def client(monkeypatch):
-    service.SESSIONS.clear()
+    service._MEM.clear()
     monkeypatch.setattr(service.jira_client, "jira_configured", lambda: True)
     monkeypatch.setattr(
         service.jira_client, "create_issue",
@@ -31,10 +31,40 @@ def test_answer_flow(client):
     assert r["conversation_id"]
     assert "Void a payment" in r["reply"]
     assert r["stage"] == "feedback"
+    # the greeting is message[0] so the widget can show it on open
+    assert r["messages"][0]["role"] == "assistant"
+    assert "SugboDoc support assistant" in r["messages"][0]["content"]
 
     done = client.post("/feedback", json={
         "conversation_id": r["conversation_id"], "helpful": True}).json()
     assert done["stage"] == "done"
+    # the terminal reply must be in `messages` (widget renders from there)
+    assert done["messages"][-1]["content"] == "Great — glad I could help!"
+
+
+def test_widget_config_serves_the_greeting(client):
+    cfg = client.get("/widget/config").json()
+    assert cfg["greeting"] == service.engine.GREETING
+    assert cfg["documentation_url"] == "/documentation"
+
+
+def test_get_session_resumes_then_404s_after_done(client):
+    r = client.post("/chat", json={"message": "How do I void a payment?"}).json()
+    cid = r["conversation_id"]
+
+    resumed = client.get(f"/session/{cid}")
+    assert resumed.status_code == 200
+    assert resumed.json()["messages"] == r["messages"]
+
+    client.post("/feedback", json={"conversation_id": cid, "helpful": True})
+    assert client.get(f"/session/{cid}").status_code == 404
+
+
+def test_documentation_page_has_nav_and_content(client):
+    body = client.get("/documentation").text
+    assert "<nav id=\"toc\">" in body
+    assert 'href="#void-a-payment"' in body
+    assert "SugboDoc Documentation" in body
 
 
 def test_refusal_leads_to_ticket_offer_and_creation(client):

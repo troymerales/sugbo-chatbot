@@ -154,9 +154,9 @@ def _cached(kind: str, payload: dict, produce):
 def _backend_generate(*, contents: list[dict], system: str | None, model: str,
                       temperature: float, json_mode: bool) -> str:
     if config.LLM_BACKEND == "mock":
-        import _mock_backend
+        from core import _mock_backend
         return _mock_backend.generate(contents=contents, system=system, json_mode=json_mode)
-    import _gemini_backend
+    from core import _gemini_backend
     return retry(lambda: _gemini_backend.generate(
         contents=contents, system=system, model=model,
         temperature=temperature, json_mode=json_mode,
@@ -165,9 +165,9 @@ def _backend_generate(*, contents: list[dict], system: str | None, model: str,
 
 def _backend_embed(texts: list[str], model: str) -> list[list[float]]:
     if config.LLM_BACKEND == "mock":
-        import _mock_backend
+        from core import _mock_backend
         return _mock_backend.embed(texts)
-    import _gemini_backend
+    from core import _gemini_backend
     return retry(lambda: _gemini_backend.embed(texts, model))
 
 

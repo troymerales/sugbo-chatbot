@@ -21,7 +21,7 @@ import math
 import re
 
 import config
-import knowledge
+from core import knowledge
 
 _EMBED_DIM = 256
 

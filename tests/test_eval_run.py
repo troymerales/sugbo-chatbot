@@ -1,4 +1,4 @@
-import eval_run
+from evaluation import eval_run
 
 
 def test_bootstrap_ci_bounds():

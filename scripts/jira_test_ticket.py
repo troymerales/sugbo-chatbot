@@ -5,10 +5,16 @@ Builds a realistic failed-conversation transcript and files it as a real Jira
 issue — the same call app.py's modal makes. Delete the issue in Jira afterwards.
 
 Run:
-    python jira_test_ticket.py
+    python -m scripts.jira_test_ticket
 """
 
 from __future__ import annotations
+
+if not __package__:
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import sys
 
@@ -17,7 +23,7 @@ try:
 except Exception:
     pass
 
-from jira_client import browse_url, create_issue, jira_configured
+from core.jira_client import browse_url, create_issue, jira_configured
 
 SAMPLE_TRANSCRIPT = """\
 User: How do I void a payment?

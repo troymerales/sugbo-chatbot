@@ -1,6 +1,5 @@
 import config
-import bot
-import grounding
+from core import bot, grounding
 
 
 def test_respond_answers_a_documented_question():

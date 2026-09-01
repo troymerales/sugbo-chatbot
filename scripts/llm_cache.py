@@ -6,16 +6,23 @@ temperature, backend). A warm cache lets `eval_run.py --offline` and the
 analytics scripts run with zero API calls.
 
 Usage:
-    python llm_cache.py            # show what's cached
-    python llm_cache.py --clear    # wipe it
+    python -m scripts.llm_cache            # show what's cached
+    python -m scripts.llm_cache --clear    # wipe it
 """
 
 from __future__ import annotations
 
+# Allow `python scripts/llm_cache.py` as well as `python -m scripts.llm_cache`.
+if not __package__:
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
 import argparse
 import sys
 
-import llm
+from core import llm
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)

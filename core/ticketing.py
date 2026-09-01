@@ -13,7 +13,7 @@ import json
 from dataclasses import dataclass
 
 import config
-from llm import LLMError, QuotaError, generate
+from core.llm import LLMError, QuotaError, generate
 
 CATEGORIES = (
     "Scheduling", "Patients", "Clinical", "Billing",

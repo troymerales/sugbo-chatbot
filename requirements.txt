@@ -8,6 +8,10 @@ requests>=2.31
 numpy>=1.26
 scikit-learn>=1.3
 
-# optional: the FastAPI backend (service.py). Not needed for the Streamlit app.
+# optional: the FastAPI backend (api/service.py). See requirements-service.txt.
 # fastapi>=0.110
 # uvicorn>=0.29
+
+# The web widget (web/index.html) loads marked.js + DOMPurify from cdnjs at
+# runtime for Markdown rendering — nothing to pip install.
+# RAG mode (USE_RAG=1) also needs no extra package: it reuses llm.embed().

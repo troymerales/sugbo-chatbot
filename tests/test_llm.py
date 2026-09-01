@@ -3,7 +3,7 @@ import json
 import pytest
 
 import config
-import llm
+from core import llm
 
 
 def test_generate_is_cached():

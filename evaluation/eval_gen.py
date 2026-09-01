@@ -8,28 +8,34 @@ eval_set.jsonl. Synthetic cases supplement, never replace, the hand-authored set
 (especially the must-refuse slice, which has to be authored).
 
 Usage:
-    python eval_gen.py                 # 2 questions per section
-    python eval_gen.py --per 1
+    python -m evaluation.eval_gen              # 2 questions per section
+    python -m evaluation.eval_gen --per 1
 """
 
 from __future__ import annotations
+
+# Allow `python evaluation/eval_gen.py` as well as `python -m evaluation.eval_gen`.
+if not __package__:
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
 import json
 import re
 import sys
 
-import cli
 import config
-import knowledge
-from llm import LLMError, QuotaError, generate
+from core import cli, knowledge
+from core.llm import LLMError, QuotaError, generate
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 except Exception:
     pass
 
-OUT_PATH = config.ROOT / "eval_generated.jsonl"
+OUT_PATH = config.EVAL_GENERATED_PATH
 
 _RUBRIC = """You write test questions for a SugboDoc support assistant.
 

@@ -12,9 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import config
-import knowledge
-import llm
-from grounding import GroundingVerdict, verify
+from core import knowledge, llm
+from core.grounding import GroundingVerdict, verify
 
 _REFUSAL_REPLY = (
     f"{config.REFUSAL_MARKER}. You can submit a support ticket and our team "
@@ -41,11 +40,19 @@ class AnswerResult:
 
 
 def fresh_chat():
-    """A new multi-turn chat session primed with the full docs."""
+    """A new multi-turn chat session.
+
+    Full-context mode: primed with the entire documentation.
+    RAG mode (config.USE_RAG): primed with a placeholder; `respond()` swaps in
+    the retrieved sections for each question.
+    """
     return llm.new_chat(knowledge.system_prompt(), model=config.ANSWER_MODEL)
 
 
 def respond(chat: llm.Chat, question: str) -> AnswerResult:
+    if config.USE_RAG:
+        # Re-ground the system prompt on just the sections relevant to this turn.
+        chat.system = knowledge.system_prompt(query=question)
     try:
         draft = chat.send(question)
     except llm.LLMError as exc:

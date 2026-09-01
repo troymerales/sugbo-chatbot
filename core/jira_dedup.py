@@ -12,8 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import config
-import jira_client
-from llm import LLMError, QuotaError, embed
+from core import jira_client
+from core.llm import LLMError, QuotaError, embed
 
 
 @dataclass(frozen=True)

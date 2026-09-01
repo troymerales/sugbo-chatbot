@@ -15,8 +15,8 @@ import json
 from dataclasses import dataclass
 
 import config
-import knowledge
-from llm import LLMError, generate
+from core import knowledge
+from core.llm import LLMError, generate
 
 _RUBRIC = """You are a strict fact-checker for a support assistant.
 
