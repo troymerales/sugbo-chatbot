@@ -163,6 +163,27 @@ def _backend_generate(*, contents: list[dict], system: str | None, model: str,
     ))
 
 
+def _backend_generate_stream(*, contents: list[dict], system: str | None,
+                             model: str, temperature: float):
+    """Yield answer text chunks. No retry() wrapper: a mid-stream failure can't
+    be retried cleanly, so it is normalised to LLMError and raised to the caller
+    (the widget shows a fallback line; verification still runs on what arrived)."""
+    if config.LLM_BACKEND == "mock":
+        from core import _mock_backend
+        yield from _mock_backend.generate_stream(contents=contents, system=system)
+        return
+    from core import _gemini_backend
+    try:
+        yield from _gemini_backend.generate_stream(
+            contents=contents, system=system, model=model, temperature=temperature,
+        )
+    except Exception as exc:  # noqa: BLE001 - normalise like retry() does
+        msg = str(exc)
+        if "PerDay" in msg or "RequestsPerDay" in msg:
+            raise QuotaError("Daily Gemini quota exhausted.\n" + msg[:300]) from exc
+        raise LLMError(msg) from exc
+
+
 def _backend_embed(texts: list[str], model: str) -> list[list[float]]:
     if config.LLM_BACKEND == "mock":
         from core import _mock_backend
@@ -206,6 +227,40 @@ class Chat:
                         ))
         self.history.append({"role": "model", "text": reply})
         return reply
+
+    def send_stream(self, text: str):
+        """Streaming sibling of send(): yield reply chunks as they arrive, then
+        record the full reply in history and the cache. A cache hit is replayed
+        as one chunk. Keyed identically to send() so the two share cache entries.
+        """
+        self.history.append({"role": "user", "text": text})
+        key = _key("generate", {
+            "contents": self.history, "system": self.system, "model": self.model,
+            "temperature": self.temperature, "json_mode": False,
+            "backend": config.LLM_BACKEND,
+        })
+        if config.LLM_CACHE:
+            hit = _cache_get(key)
+            if hit is not None:
+                self.history.append({"role": "model", "text": hit})
+                yield hit
+                return
+        if config.LLM_OFFLINE:
+            raise OfflineCacheMiss(
+                "offline: no cached response for this message. Warm the cache "
+                "with a live (or --mock) run first."
+            )
+        chunks: list[str] = []
+        for piece in _backend_generate_stream(
+            contents=self.history, system=self.system,
+            model=self.model, temperature=self.temperature,
+        ):
+            chunks.append(piece)
+            yield piece
+        reply = "".join(chunks)
+        self.history.append({"role": "model", "text": reply})
+        if config.LLM_CACHE and reply:
+            _cache_put(key, "generate", reply)
 
 
 def new_chat(system: str, *, model: str | None = None, temperature: float = 0.2) -> Chat:

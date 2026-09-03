@@ -1,6 +1,18 @@
+# --- secrets: never commit ---
 .env
-# local Claude Code MCP config (project-specific)
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*-key.json                 # cloud service-account keys
+# local Claude Code config (project-specific, may hold tokens)
 .mcp.json
+.claude/settings.local.json
+
+# --- private study material (see study/README.md) ---
+# Everything under study/ is personal learning notes + the cloud lab notebook.
+# GitHub shows the professional project; study/ stays on the local machine only.
+study/
 
 chapters.txt
 transcript.txt
@@ -17,6 +29,7 @@ docs/homepage-reference.png
 __pycache__/
 *.egg-info/
 .pytest_cache/
+.ipynb_checkpoints/
 *.sqlite
 *.db
 logs/
@@ -24,3 +37,6 @@ doc_proposals/
 evaluation/eval_generated.jsonl
 evaluation/eval_scorecard.json
 tickets.csv
+
+# local docker-compose overrides (machine-specific ports / mounts)
+docker-compose.override.yml

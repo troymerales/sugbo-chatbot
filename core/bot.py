@@ -61,10 +61,49 @@ def respond(chat: llm.Chat, question: str) -> AnswerResult:
             text=f"Sorry — I couldn't reach the model just now ({exc}).",
             draft="", refused=False, grounding=verdict,
         )
+    return _finalize(question, draft)
 
-    verdict = verify(question, draft)
-    if verdict.is_refusal_worthy:
-        return AnswerResult(_REFUSAL_REPLY, draft, True, verdict)
 
+_MODEL_ERROR_PREFIX = "Sorry — I couldn't reach the model just now"
+
+
+def respond_stream(chat: llm.Chat, question: str):
+    """Streaming sibling of respond().
+
+    Yields draft-answer text chunks as the model produces them. The verification
+    pass does NOT run here — the caller drains the stream, then calls
+    finalize_answer(question, draft) to get the final AnswerResult. The widget
+    uses this to stream the draft and then append a correction if verification
+    rejects it (stream-then-correct).
+    """
+    if config.USE_RAG:
+        chat.system = knowledge.system_prompt(query=question)
+    try:
+        yield from chat.send_stream(question)
+    except llm.LLMError as exc:
+        yield f"{_MODEL_ERROR_PREFIX} ({exc})."
+
+
+def finalize_answer(question: str, draft: str) -> AnswerResult:
+    """Verification pass over an already-streamed draft -> final AnswerResult.
+    Mirrors the tail of respond()."""
+    if not draft or draft.startswith(_MODEL_ERROR_PREFIX):
+        return AnswerResult(
+            text=draft or f"{_MODEL_ERROR_PREFIX}.",
+            draft="", refused=False,
+            grounding=GroundingVerdict(True, (), "answer model error", False),
+        )
+    return _finalize(question, draft)
+
+
+def _finalize(question: str, draft: str) -> AnswerResult:
+    if config.VERIFY_ANSWERS:
+        verdict = verify(question, draft)
+        if verdict.is_refusal_worthy:
+            return AnswerResult(_REFUSAL_REPLY, draft, True, verdict)
+    else:
+        verdict = GroundingVerdict(
+            True, (), "verification disabled (VERIFY_ANSWERS=0)", False
+        )
     refused = config.REFUSAL_MARKER.lower() in draft.lower()
     return AnswerResult(draft, draft, refused, verdict)

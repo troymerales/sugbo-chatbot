@@ -10,6 +10,7 @@ from api import service  # noqa: E402
 @pytest.fixture
 def client(monkeypatch):
     service._MEM.clear()
+    service._HITS.clear()
     monkeypatch.setattr(service.jira_client, "jira_configured", lambda: True)
     monkeypatch.setattr(
         service.jira_client, "create_issue",
@@ -20,10 +21,35 @@ def client(monkeypatch):
     return TestClient(service.app)
 
 
-def test_healthz(client):
+def test_healthz_is_liveness_only(client):
     body = client.get("/healthz").json()
     assert body["status"] == "ok"
     assert body["backend"] == "mock"
+    assert "active_sessions" not in body        # no DB touch in a liveness probe
+
+
+def test_readyz_reports_disabled_db_as_ready(client):
+    r = client.get("/readyz")
+    assert r.status_code == 200                 # no DATABASE_URL in tests
+    assert r.json()["database"] == "disabled"
+    assert r.json()["status"] == "ready"
+
+
+def test_rate_limit_returns_429_over_the_cap(client, monkeypatch):
+    monkeypatch.setattr(service.config, "RATE_LIMIT_PER_MIN", 3)
+    codes = [client.post("/chat", json={"message": "How do I void a payment?"}).status_code
+             for _ in range(5)]
+    assert codes[:3] == [200, 200, 200]
+    assert codes[-1] == 429
+
+
+def test_unhandled_error_is_a_safe_500(client, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("secret internal detail")
+    monkeypatch.setattr(service.engine, "ask", boom)
+    r = client.post("/chat", json={"message": "hi"})
+    assert r.status_code == 500
+    assert r.json() == {"detail": "internal error"}   # no stack trace leaked
 
 
 def test_answer_flow(client):
@@ -82,6 +108,35 @@ def test_refusal_leads_to_ticket_offer_and_creation(client):
         "category": draft["category"],
     }).json()
     assert res["ticket_id"] == "KAN-999"
+
+
+def test_thumbs_down_is_logged_even_without_a_ticket(client):
+    from core import chatlog
+
+    r = client.post("/chat", json={"message": "How do I void a payment?"}).json()
+    cid = r["conversation_id"]
+    client.post("/feedback", json={"conversation_id": cid, "helpful": False})
+
+    logged = [c for c in chatlog.load_all() if c.conversation_id == cid]
+    assert len(logged) == 1
+    assert logged[0].outcome == "unresolved"
+    assert logged[0].thumbs == "down"
+    assert "thumbs_down" in logged[0].failure_signals
+
+
+def test_unresolved_row_is_updated_in_place_when_a_ticket_is_filed(client):
+    from core import chatlog
+
+    r = client.post("/chat", json={"message": "totally unrelated nonsense"}).json()
+    cid = r["conversation_id"]                       # refusal -> logged "unresolved"
+    assert [c.outcome for c in chatlog.load_all() if c.conversation_id == cid] == ["unresolved"]
+
+    client.post("/ticket", json={
+        "conversation_id": cid, "email": "qa@example.com",
+        "subject": "help", "summary": "stuck", "category": "Other",
+    })
+    rows = [c for c in chatlog.load_all() if c.conversation_id == cid]
+    assert len(rows) == 1 and rows[0].outcome == "ticket_filed"
 
 
 def test_ticket_passes_name_email_and_due_date(client, monkeypatch):

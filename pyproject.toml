@@ -10,39 +10,38 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 
-# Core runtime (the answer/verify pipeline + analytics). Kept in sync with
-# requirements.txt — pick either to install.
+# Streamlit runtime — the answer/verify pipeline + the widget. In sync with
+# requirements.txt (pick either to install).
 dependencies = [
+    "streamlit>=1.37",
     "google-genai>=1.0",
     "python-dotenv>=1.0",
     "requests>=2.31",
-    "numpy>=1.26",
-    "scikit-learn>=1.3",
+    "SQLAlchemy>=2.0",        # chat-log persistence (only used when DATABASE_URL is set)
+    "psycopg[binary]>=3.1",
 ]
 
 [project.optional-dependencies]
-# FastAPI backend + PostgreSQL persistence (requirements-service.txt)
+# The original FastAPI backend (requirements-service.txt)
 service = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
-    "SQLAlchemy>=2.0",
-    "psycopg[binary]>=3.1",
+    "sentry-sdk[fastapi]>=2.0",
 ]
-# Streamlit demo UI
-streamlit = ["streamlit>=1.37"]
+# Batch failure clustering (requirements-analytics.txt)
+analytics = ["numpy>=1.26", "scikit-learn>=1.3"]
 # Everything needed to run the full test suite (requirements-dev.txt)
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
-    "SQLAlchemy>=2.0",
 ]
 
 [tool.setuptools]
 # a mix of top-level modules and packages
-py-modules = ["config", "app"]
-packages = ["core", "api", "evaluation", "analytics", "scripts"]
+py-modules = ["config", "app", "streamlit_app"]
+packages = ["core", "api", "assistant", "evaluation", "analytics", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

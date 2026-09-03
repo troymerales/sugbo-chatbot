@@ -389,11 +389,11 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `core/retrieval.py` | `USE_RAG` mode: embed sections (`llm.embed`) + cosine rank → top-K | §0 |
 | `core/bot.py` | `respond()` — the one answer path: (RAG re-ground) → answer model → verification → refuse-or-answer | §1 |
 | `core/grounding.py` | The verification pass (`verify()` → `GroundingVerdict`), always vs full docs | §1 |
-| `core/failure_capture.py` | Rule-based `detect_failures()` (no model call — triage was removed for cost) | §2 |
+| `core/failure_capture.py` | Rule-based `detect_failures()` → `FailureSignals` (`.as_list()` short names + `.reasons` prose, both logged); no model call — triage was removed for cost | §2 |
 | `core/ticketing.py` | `default_draft()` (no model call — subject = first question), `as_iso_date()` / `urgency_for_date()` for the due-date picker | §3 |
 | `core/jira_client.py` | Outbound `create_issue()` — ADF description, `labels`, `duedate` (from a date picker), `reporter` (resolved from the user's email via `resolve_account_id`), drop-and-retry if Jira rejects an optional field; batch reads `list_recent_open_issues` / `list_resolved_issues` | §3, §4 |
 | `core/jira_dedup.py` | `find_duplicate()` — embed draft vs open tickets, cosine (the one Jira read) | §3 |
-| `core/chatlog.py` | Append/load finished conversations — `logs/chats.jsonl`, or the `chat_logs` table when `DATABASE_URL` is set; + `logs/chats.csv` mirror | feeds §6, §7 |
+| `core/chatlog.py` | Upsert/load conversations (one row per `conversation_id`: `unresolved` on failure, updated to the terminal outcome) — `logs/chats.jsonl`, or the `chat_logs` table when `DATABASE_URL` is set; + `logs/chats.csv` mirror | feeds §6, §7 |
 | `api/db.py` | SQLAlchemy engine + `conversations` / `chat_logs` models — opt-in Postgres persistence for `api/service.py` | §1–§3 |
 | `api/db_init.py` / `api/schema.sql` | Create / check / reset the DB schema | setup |
 | `core/engine.py` | UI-independent conversation state machine (`chat → feedback → offer_ticket → done`); `serialize()` / `deserialize()` for the session store | §1–§3 |
@@ -415,7 +415,7 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `python -m scripts.llm_cache` | Inspect / `--clear` the response cache | — |
 | `python -m core.chatlog` | Rebuild `logs/chats.csv` from the primary store (a flat CSV mirror is also written on every log) | — |
 | `python -m scripts.jira_check` | Standalone connectivity + createmeta field check (`--create-test` files a throwaway) | setup |
-| `pytest` | 64 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
+| `pytest` | 83 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
 
 ### Data files
 
@@ -427,7 +427,7 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `evaluation/eval_scorecard.md` | yes | committed baseline — diff it on every prompt/docs change (marks backend + retrieval mode; a `mock` card is a plumbing check, not a score) |
 | `evaluation/eval_scorecard.json` | gitignored | machine-readable scorecard + per-case detail |
 | `web/index.html` | yes | static SugboDoc dashboard mockup + floating chat widget, served by `api/service.py` |
-| `logs/chats.jsonl` | gitignored | append-only conversation log (unless `DATABASE_URL` → `chat_logs` table) |
+| `logs/chats.jsonl` | gitignored | conversation log, upserted per `conversation_id` (unless `DATABASE_URL` → `chat_logs` table) |
 | `logs/chats.csv` | gitignored | flat one-row-per-conversation mirror, written on every log regardless of store |
 | `api/schema.sql` | yes | raw DDL for the Postgres backend — mirror of `api/db.py` |
 | `logs/llm_cache.sqlite` | gitignored | response cache (warm it once, then `--offline`) |
@@ -457,7 +457,7 @@ flowchart LR
 
 ```
 pip install -r requirements-dev.txt
-pytest                                   # 64 offline tests (~2s)
+pytest                                   # 83 offline tests (~2s)
 
 cp .env.example .env                     # add GEMINI_API_KEY (+ JIRA_* for ticketing)
 streamlit run app.py                     #  or:  LLM_BACKEND=mock streamlit run app.py

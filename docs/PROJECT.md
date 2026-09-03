@@ -32,8 +32,17 @@ read during a chat — the only path from Jira back to the bot is `Jira → docs
 ```
 chatbot/
 ├── README.md                     one-page overview + quickstart
+├── MERGE.md                      folding the widget into the umbrella "SugboDoc" app
 ├── config.py                     paths, model names, thresholds, feature toggles (stays at root)
-├── app.py                        Streamlit demo UI (entry point)
+├── streamlit_app.py              pure-Streamlit app: dashboard backdrop + floating assistant (entry point)
+├── app.py                        older full-page Streamlit demo (still works, local only)
+│
+├── assistant/                    the Streamlit layer — the only place `import streamlit` appears
+│   ├── widget.py                 render_floating_assistant() — the shared floating widget
+│   ├── session.py                the widget's state machine (Streamlit sibling of core/engine.py)
+│   ├── ticket_dialog.py          the support-ticket form, as an @st.dialog
+│   ├── bootstrap.py              st.secrets → os.environ (MERGE SEAM #1)
+│   └── styles.py                 the widget CSS (pins it bottom-right)
 │
 ├── core/                         the library
 │   ├── llm.py                    one interface to a model: generate / chat / embed + cache
@@ -70,9 +79,10 @@ chatbot/
 │   └── seed_demo_log.py          synthetic chat log so the analytics scripts are demoable
 │
 ├── scripts/                      llm_cache.py · jira_check.py · jira_test_ticket.py
-├── web/index.html                SugboDoc dashboard mockup + floating chat widget
+├── web/index.html                SugboDoc dashboard mockup + the old JS widget (FastAPI backend only)
+├── .streamlit/                   config.toml (theme) + secrets.toml.example
 ├── docs/                         PROJECT.md · SugboDoc-Chatbot-Flowchart.md · the knowledge base
-└── tests/                        pytest suite (runs fully offline, 64 tests)
+└── tests/                        pytest suite (runs fully offline, 83 tests; AppTest for the widget)
 ```
 
 Each subdirectory is a package. Modules import each other as `from core import bot`,
@@ -97,8 +107,12 @@ Key names:
 - `DEDUP_SIMILARITY_THRESHOLD` (default 0.82) — cosine similarity above which a drafted
   ticket is treated as a duplicate.
 - `REFUSAL_MARKER` — the exact sentence the bot must emit when it can't answer.
+- `VERIFY_ANSWERS` (default 1) — run the verification pass. `0` halves the model calls
+  per question at the cost of the grounding check.
 - `LLM_BACKEND` (`gemini` | `mock`), `LLM_CACHE` (bool), `LLM_OFFLINE` (bool) — read
   **live on every call**, so scripts flip them at runtime via `cli.py`.
+- On a read-only host, `LOG_DIR` (and the cache / JSONL paths under it) fall back to a
+  temp dir so `import config` can't fail.
 
 ### `llm.py`
 The only module that knows how to talk to a model. Everything else calls:
@@ -180,6 +194,10 @@ Two jobs:
   - `repeated_question` — two user turns with `difflib` similarity ≥ 0.8
   - `negative_feedback` — the last user turn contains a phrase like "not helpful" / "that's
     wrong"
+  `FailureSignals.as_list()` gives the short names above; `.reasons` gives the matching
+  human-readable strings ("user re-asked the same question"). The engine keeps both on the
+  conversation (`failure_signals` / `failure_reasons`) and logs both — `.reasons` is what you
+  read during failure triage; the CSV mirror pipe-joins it into a `failure_reasons` column.
   *Rules first, model later:* a dissatisfaction classifier is only worth training once the
   logs show these rules missing failures.
   *(An LLM `triage()` call — docs-gap / product-bug / out-of-scope — used to run here; it
@@ -227,40 +245,52 @@ Best-effort — any failure returns `None` rather than blocking a ticket. **This
 Jira read in the whole runtime, and it's per-submission, not per-message.**
 
 ### `chatlog.py`
-- `ConversationRecord` — one dataclass per finished conversation: id, timestamps, outcome
-  (`resolved` | `ticket_filed` | `linked_duplicate` | `abandoned`), question count, full
-  messages, `failure_signals`, `grounding_checks`, `thumbs`, `ticket_id`, `ticket_category`,
+- `ConversationRecord` — one dataclass per conversation: id, timestamps, outcome
+  (`unresolved` | `resolved` | `ticket_filed` | `linked_duplicate` | `abandoned`), question
+  count, full messages, `failure_signals` (+ `failure_reasons`, the human-readable "why"),
+  `grounding_checks`, `thumbs`, `ticket_id`, `ticket_category`,
   `needed_by` / `due_date`, `duplicate_of` (`triage_label` / `triage_confidence` are still
   fields but no longer populated — triage was removed). `.failed` and
   `.failed_user_questions()` are used by the analytics.
-- `append(record)` / `load_all()` — storage depends on `config.DATABASE_URL`: unset →
-  one JSON line per conversation in `logs/chats.jsonl`; set → one row in the `chat_logs`
-  table (via `db.py`). Same API either way, so the analytics scripts don't care.
+- **`append(record)` is an upsert keyed by `conversation_id`.** A chat is logged the moment
+  it goes wrong — the engine writes an `unresolved` row on any failure (thumbs-down,
+  refusal, stuck) — and the *same* row is updated in place if it later reaches a ticket /
+  duplicate-link / resolution. So a thumbs-down that never becomes a ticket is still
+  captured, and there's still one record per conversation. `load_all()` dedupes on
+  `conversation_id` (newest wins) as a backstop.
+- Storage depends on `config.DATABASE_URL`: unset → `logs/chats.jsonl` (rewritten on each
+  upsert); set → one row in the `chat_logs` table via `db.upsert_chat_log()`. Same API
+  either way, so the analytics scripts don't care.
 - `reset_store()` wipes the log (file unlink or `DELETE FROM chat_logs`, plus the CSV) —
   used by `seed_demo_log.py --reset` and the tests. `new_conversation_id()`, `now_iso()`.
-- **Local CSV mirror:** every `append()` also writes a flattened row to
-  `logs/chats.csv` (`config.CHAT_LOG_CSV_PATH`) — even when the primary store is Postgres.
-  One row per conversation, ~17 columns (`outcome`, `failed`, `failure_signals`, `thumbs`,
+- **Local CSV mirror:** every `append()` rewrites `logs/chats.csv`
+  (`config.CHAT_LOG_CSV_PATH`) from the primary store — one row per conversation, ~18
+  columns (`outcome`, `failed`, `failure_signals`, `failure_reasons`, `thumbs`,
   `ticket_id`, `needed_by`, `due_date`, `first_user_question`, `last_assistant_message`, …).
   Nothing reads it back; it's for eyeballing in a spreadsheet. `python -m core.chatlog`
-  rebuilds it from the primary store (`export_csv()`) — handy to backfill rows written
-  straight to Supabase.
+  rebuilds it explicitly (`export_csv()`) — handy after backfilling straight to Supabase.
 
 ### `db.py` — PostgreSQL persistence (opt-in)
 Only active when `DATABASE_URL` is set (`postgresql+psycopg://user:pass@host:5432/sugbodoc`).
 - `enabled()` — `bool(config.DATABASE_URL)`; every caller branches on this.
 - Models: **`ConversationRow`** (`conversations` — one live session: `stage`, `started_at`,
   `question_count`, `state` JSONB = the serialised `engine.Conversation`, `updated_at`);
-  **`ChatLogRow`** (`chat_logs` — one finished conversation: promoted `conversation_id` /
-  `outcome` / timestamps for querying + the full `record` JSONB). JSONB on Postgres, plain
-  JSON on SQLite (the test-suite).
+  **`ChatLogRow`** (`chat_logs` — one row per conversation, keyed by `conversation_id`:
+  promoted `conversation_id` / `outcome` / timestamps for querying + the full `record`
+  JSONB). JSONB on Postgres, plain JSON on SQLite (the test-suite).
 - `_get_engine()` (adds `pool_pre_ping` + `pool_recycle=1800` for managed poolers like
-  Supabase Supavisor) / `session()` (transactional context manager) / `_run(op)` (runs
+  Supabase Supavisor, plus explicit `pool_size` / `max_overflow` from
+  `config.DB_POOL_SIZE`/`DB_MAX_OVERFLOW` so the pool stays under Supabase's free-tier
+  connection cap) / `session()` (transactional context manager) / `_run(op)` (runs
   `op` in a transaction, **retries once** on `OperationalError`/`DBAPIError` — a dropped
   idle pooler connection — before giving up loudly) / `reset()` / `init_db()` / `drop_db()`.
 - `save_conversation()` / `load_conversation()` / `delete_conversation()` / `count_conversations()`
   / `delete_stale_conversations(hours)` (startup sweep of abandoned live rows).
-- `insert_chat_log()` / `all_chat_logs()` / `clear_chat_logs()`. All go through `_run()`.
+- `ping()` — a `SELECT 1` that never raises (returns `False` on any error); backs the
+  `/readyz` probe.
+- `upsert_chat_log()` (insert, or update the row for this `conversation_id` in place) /
+  `all_chat_logs()` / `clear_chat_logs()` (`insert_chat_log()` kept for back-compat). All
+  go through `_run()`.
 
 ### `db_init.py` — schema management
 `python -m api.db_init` (create, idempotent) · `--check` (report tables) · `--drop` (drop +
@@ -279,10 +309,19 @@ used by **both** the app and the eval harness so they measure the same thing:
 0. If `config.USE_RAG`: `chat.system = knowledge.system_prompt(query=question)` — re-ground
    on the sections retrieved for this turn.
 1. `chat.send(question)` — the answer model, grounded in the docs.
-2. `grounding.verify(question, draft)` — always against the full docs.
+2. `grounding.verify(question, draft)` — always against the full docs (skipped if
+   `config.VERIFY_ANSWERS` is off).
 3. If not supported → return the fixed refusal. Else return the draft.
 `AnswerResult(text, draft, refused, grounding)`; `.log_entry()` produces the per-answer
 record stored in the chat log. `fresh_chat()` = `llm.new_chat(knowledge.system_prompt())`.
+
+`respond_stream(chat, question)` + `finalize_answer(question, draft)` — the streaming
+split used by the Streamlit widget: `respond_stream` yields draft-answer chunks (RAG
+prompt swap happens here; verification does **not**), then `finalize_answer` runs the
+verification pass over the finished draft and returns the `AnswerResult`. Backed by
+`llm.Chat.send_stream()` → `_gemini_backend.generate_stream()` (or the mock's chunked
+stand-in). `respond()` is unchanged, so the FastAPI path and the eval harness are
+unaffected.
 
 ### `engine.py` — the conversation state machine
 UI-independent. `service.py` drives a `Conversation` through it; `app.py` implements the
@@ -292,8 +331,10 @@ same flow inline (it predates this module).
 - `start(id?) -> Conversation` (greeting + a fresh `bot` chat)
 - `ask(conv, text)` — appends turn, calls `bot.respond`, then routes to `feedback`,
   `offer_ticket` (on refusal or after N questions), else stays.
+- `_enter_failure(conv, …)` — rule-based failure capture, move to `offer_ticket`, **and log
+  the chat now** as `unresolved` (so a failed chat is captured even if no ticket follows).
 - `feedback(conv, helpful)` — 👍 → appends *"Great — glad I could help!"*, `resolved` + log;
-  👎 → rule-based failure capture, offer a ticket.
+  👎 → `_enter_failure` (logs `unresolved`, offers a ticket).
 - `tell_me_more(conv)` — back to `chat`.
 - `ticket_draft(conv)` — `ticketing.default_draft` (no model call) + `jira_dedup.find_duplicate`.
 - `submit_ticket(conv, *, email, subject, summary, category, needed_by="", name="")` —
@@ -302,7 +343,10 @@ same flow inline (it predates this module).
   name. All go to `create_issue` (`contact=email`, `submitter_name=name`, `due_date`,
   `urgency`). `link_duplicate(conv)` likewise. Both append their confirmation message and
   return a full `_state(conv)`.
-- `log_abandoned(conv)` / `_log(conv, outcome)` — writes the `ConversationRecord`.
+- `_log(conv, outcome)` — upserts the `ConversationRecord` (called repeatedly: `unresolved`
+  first, then the terminal outcome updates the same row). `log_abandoned(conv)` keeps a
+  `not conv.logged` guard, so a chat that already reached any outcome is never relabelled
+  `abandoned`.
 - `serialize(conv) -> dict` / `deserialize(dict) -> Conversation` — plain JSON-able form
   (chat history included) that `service.py` stores in the `conversations` table.
 
@@ -310,18 +354,40 @@ Stages: `chat → feedback → offer_ticket → done`.
 
 ---
 
-## 4. The three ways to run it
+## 4. The ways to run it
 
-### A. Streamlit demo — `app.py`
+*(Cloud deployment — Docker on Render + Supabase + GitHub Actions — is its own
+document: `docs/architecture.md`. Folding the widget into the umbrella "SugboDoc"
+multipage app is `MERGE.md`.)*
+
+### A. Pure-Streamlit app — `streamlit_app.py`  (the primary path)
 ```
 pip install -r requirements.txt
-cp .env.example .env       # add GEMINI_API_KEY (+ JIRA_* to enable ticketing)
-streamlit run app.py
-#  or, with no key:   LLM_BACKEND=mock streamlit run app.py
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # GEMINI_API_KEY (+ JIRA_*, DATABASE_URL)
+streamlit run streamlit_app.py
+#  or, with no key:   LLM_BACKEND=mock streamlit run streamlit_app.py
 ```
-Sidebar shows what it's grounded on, the Jira target, the models, live failure signals.
-Stage machine identical to `engine.py`; the ticket form is a modal (`@st.dialog`) with a
-date picker for the due date; every conversation is logged on a terminal state.
+No server: the assistant runs in-process via `core/`. A static dashboard backdrop
+(`web/index.html` with its old JS stripped) + a floating **💬 Support** widget pinned
+bottom-right. Deployable to Streamlit Community Cloud as-is.
+
+The `assistant/` package is the only place `import streamlit` appears:
+- `assistant/widget.py` — `render_floating_assistant()`: a `st.popover` whose body is a
+  `@st.fragment`; renders the transcript, `st.write_stream(session.stream_reply())` for
+  the answer, then the feedback / ticket / "tell me more" controls per stage.
+- `assistant/session.py` — the Streamlit sibling of `engine.py`. Same stages
+  (`chat → feedback → offer_ticket → done`), same failure capture, same chat-log upsert,
+  over `st.session_state` keys prefixed `asst_`. `resolve_pending(draft)` runs
+  `bot.finalize_answer` and, if the verification pass walks a streamed draft back,
+  **appends a visible correction** rather than silently swapping it.
+- `assistant/ticket_dialog.py` — the ticket form as one `@st.dialog` (draft → dedup →
+  form → `session.file_ticket` → `jira_client.create_issue`). Same Jira sink as before.
+- `assistant/bootstrap.py` — `load_secrets()`: `st.secrets` → `os.environ` (MERGE SEAM #1).
+- `assistant/styles.py` — the CSS that pins the widget bottom-right.
+
+### A-legacy. Older full-page Streamlit demo — `app.py`
+Still works (`streamlit run app.py`), still local-only. Its inline stage machine predates
+both `engine.py` and `assistant/session.py`.
 
 ### B. FastAPI backend — `api/service.py`  (the "ship it to a website" path)
 ```
@@ -334,6 +400,14 @@ uvicorn api.service:app --reload         # run from anywhere — config.py loads
 #  http://127.0.0.1:8000/documentation   the docs viewer (left nav + rendered markdown)
 #  http://127.0.0.1:8000/docs            OpenAPI explorer
 ```
+
+### C. Docker Compose — the way production runs
+```
+docker compose up --build     # the API image + a throwaway PostgreSQL 16
+#  http://localhost:8000       LLM_BACKEND=mock by default (no key needed)
+docker compose down -v         # stop and wipe the local DB volume
+```
+Same image Render builds, against a real Postgres — dev/prod parity.
 `web/index.html` is a **static** SugboDoc dashboard mockup (sidebar nav, stat cards, an
 encounters table) with a fixed **floating chat bubble** in the lower-right. Clicking it
 opens a chat card anchored above the bubble; a `×` collapses it. On open it shows the
@@ -362,8 +436,23 @@ section nav (built from `knowledge.content_sections()`, `##` + `###`, with scrol
 the body rendered by the same `marked.js` + `DOMPurify` pair.
 
 Endpoints: `GET /`, `GET /documentation`, `GET /widget/config`, `GET /healthz`,
-`POST /chat`, `POST /feedback`, `POST /tell-me-more`, `GET /ticket/draft`, `POST /ticket`,
-`POST /ticket/link-duplicate`, `GET|DELETE /session/{id}`.
+`GET /readyz`, `POST /chat`, `POST /feedback`, `POST /tell-me-more`, `GET /ticket/draft`,
+`POST /ticket`, `POST /ticket/link-duplicate`, `GET|DELETE /session/{id}`.
+
+**Health probes.** `/healthz` is **liveness** — 200 whenever the process is up, and
+deliberately touches nothing external (it's Render's health check; coupling it to the DB
+would cause restart loops when Supabase is paused). `/readyz` is **readiness** — runs
+`db.ping()` (a `SELECT 1`) and returns 503 `database: down` if the DB is configured but
+unreachable. The widget still works in that state (in-memory fallback), so `/readyz` is a
+monitoring signal, not a gate.
+
+**Middleware** (added in `service.py`): a request logger (`METHOD /path -> status (Nms)` to
+stdout, and unhandled exceptions become a safe `500 {"detail":"internal error"}` with the
+traceback logged server-side only), a per-IP in-process rate limiter (`RATE_LIMIT_PER_MIN`,
+protects the Gemini quota; resets on redeploy), and CORS **only if `CORS_ORIGINS` is set**
+(the bundled widget is same-origin, so the default is closed — never `*`). Optional Sentry
+error tracking initialises only when `SENTRY_DSN` is set. Full cloud picture:
+`docs/architecture.md`.
 
 **Session store.** With `DATABASE_URL` unset, sessions live in an in-process dict (`_MEM`)
 and finished conversations go to `logs/chats.jsonl` — fine for a single-process demo. With
@@ -373,8 +462,9 @@ worker loses nothing. `service.py` reloads the conversation from the store on ev
 and saves it back in a `finally:`; the row is dropped once the conversation ends (it's in
 `chat_logs` by then), and a startup sweep clears live rows abandoned > 24 h. DB writes go
 through `db._run()`, which retries once on a dropped pooler connection (`pool_pre_ping` +
-`pool_recycle=1800` on the engine) rather than 500-ing or silently using a file. `/healthz`
-reports `session_store: postgres | memory`. CORS is open for the demo — lock `allow_origins`.
+`pool_recycle=1800`, small explicit `pool_size`/`max_overflow` for Supabase's connection
+cap) rather than 500-ing or silently using a file. `/healthz` reports
+`session_store: postgres | memory`.
 
 > **Answering "do I need to rewrite this in TypeScript?"** — no. Streamlit is the only part
 > that can't embed in an existing site; `service.py` gives you a JSON API your existing
@@ -449,14 +539,15 @@ product bug, keep it in Jira" verdict) plus an eval case to add first. Output:
 
 ### `analytics_kpis.py`
 No model calls. Containment (resolved without a ticket), ticket-filed rate,
-duplicate-linked rate, abandoned rate, thumbs-up rate, refusal rate, verification-pass
-catch rate, repeat-question rate, ticket categories.
+duplicate-linked rate, unresolved rate (chat failed, no ticket filed), abandoned rate,
+thumbs-up rate, refusal rate, verification-pass catch rate, repeat-question rate,
+ticket categories.
 
 ---
 
 ## 7. Tests — `tests/`
 
-`pip install -r requirements-dev.txt && pytest`. 64 tests, **fully offline** (the
+`pip install -r requirements-dev.txt && pytest`. 83 tests, **fully offline** (the
 `conftest.py` fixture forces the mock backend and points every path — cache, chat log — at
 a `tmp_path`; the DB tests use a throwaway SQLite file, no server). Coverage:
 
@@ -465,7 +556,7 @@ a `tmp_path`; the DB tests use a throwaway SQLite file, no server). Coverage:
 | `test_knowledge.py` | section parsing, TOC exclusion, `find_section`, system prompt contents |
 | `test_retrieval.py` | full-context vs RAG prompt, section ranking, bot answers + refuses with RAG on |
 | `test_failure_capture.py` | every rule signal, fuzzy repeat detection |
-| `test_chatlog.py` | JSONL round-trip, `.failed` / `.failed_user_questions()` |
+| `test_chatlog.py` | JSONL round-trip, upsert-on-`conversation_id` (+ CSV mirror), `.failed` / `.failed_user_questions()` |
 | `test_db.py` | chat-log round-trip via Postgres, `reset_store`, session persist/restore, `/healthz` store, drop-on-terminal |
 | `test_ticketing.py` | deterministic `default_draft`, `as_iso_date`, `urgency_for_date` |
 | `test_jira_client.py` | ADF structure, description fields, `duedate`/`urgency` mapping, name→`Submitter` (not `reporter`), custom-column ids resolved by name, drop-and-retry on a 400 |
@@ -537,7 +628,11 @@ grounding, fine-tuning, TextTiling for doc segmentation.
   `conversations` / `chat_logs` tables (`db.py`, `db_init.py`). The engine has
   `pool_pre_ping` + `pool_recycle` and `_run()` retries a dropped pooler connection once,
   but there are no Alembic migrations — `db_init.py` / `schema.sql` create the schema outright.
-- **No auth / rate limiting / PII redaction** on `service.py` yet — see the docstring.
+- **Security is portfolio-grade, not enterprise.** `service.py` has a per-IP in-process
+  rate limiter (resets on redeploy, per-instance), closed-by-default CORS, safe error
+  envelopes, and a non-root container — but **no end-user auth** (the chat is public by
+  design) and no PII redaction of the transcript before it's logged. See
+  `docs/architecture.md` → Security.
 - `app.py` could be refactored onto `engine.py` to remove the duplicated flow.
 - The verification pass doubles per-turn latency and cost — worth A/B-ing a
   confidence-gated version (only verify when the answer model is unsure).
@@ -548,7 +643,7 @@ grounding, fine-tuning, TextTiling for doc segmentation.
 
 ```
 pip install -r requirements-dev.txt
-pytest                                        # 64 tests, offline, ~2s
+pytest                                        # 83 tests, offline, ~2s
 
 cp .env.example .env                          # add GEMINI_API_KEY
 python -m evaluation.eval_run --limit 10      # sanity-check the real model

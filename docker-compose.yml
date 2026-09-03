@@ -1,0 +1,49 @@
+# Local development stack: the API container + a throwaway PostgreSQL, so you can
+# exercise the *same* Postgres code path that runs in the cloud without a
+# Supabase account. This is "dev/prod parity" — same container, same DB engine,
+# different data.
+#
+#   docker compose up --build      # http://localhost:8000
+#   docker compose down            # stop
+#   docker compose down -v         # stop AND wipe the local database volume
+#
+# Defaults to the offline mock LLM so it runs with no API key. To use real
+# Gemini, put GEMINI_API_KEY in .env (compose reads .env automatically) and set
+# LLM_BACKEND=gemini below or in .env.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sugbodoc
+    ports:
+      - "5432:5432"          # exposed so you can also connect with psql / the notebook
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      ENV: dev
+      LLM_BACKEND: ${LLM_BACKEND:-mock}
+      # 'db' is the compose service name — Docker's internal DNS resolves it.
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/sugbodoc
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    env_file:
+      - path: .env           # optional; provides GEMINI_API_KEY / JIRA_* if present
+        required: false
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

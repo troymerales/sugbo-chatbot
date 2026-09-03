@@ -37,12 +37,14 @@ from __future__ import annotations
 
 import base64
 import html
-import os
+import logging
+import time
+from collections import deque
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 import config
@@ -50,29 +52,113 @@ from api import db
 from core import engine, jira_client, knowledge
 from core.llm import QuotaError
 
+# --------------------------------------------------------------------------- #
+# Logging — to stdout, so whatever runs the process (Render, Docker, your
+# terminal) is the one that captures/ships logs. Never a log file in the cloud:
+# the container filesystem is ephemeral and there's no one to rotate it.
+# --------------------------------------------------------------------------- #
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("sugbodoc.api")
+
+# --------------------------------------------------------------------------- #
+# Error monitoring — opt-in. No SENTRY_DSN => sentry-sdk is never imported and
+# nothing leaves the process.
+# --------------------------------------------------------------------------- #
+if config.SENTRY_DSN:
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(dsn=config.SENTRY_DSN, environment=config.ENV,
+                        traces_sample_rate=0.0)  # errors only — no perf quota use
+        log.info("Sentry error tracking enabled (env=%s)", config.ENV)
+    except Exception as exc:  # missing package, bad DSN — never fatal
+        log.warning("SENTRY_DSN set but Sentry init failed: %s", exc)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    log.info("starting SugboDoc API (env=%s, db=%s, rag=%s)",
+             config.ENV, "postgres" if db.enabled() else "memory", config.USE_RAG)
     if db.enabled():
         db.init_db()
         swept = db.delete_stale_conversations(24)
         if swept:
-            print(f"[startup] cleared {swept} stale conversation row(s)")
+            log.info("startup: cleared %d stale conversation row(s)", swept)
     yield
+    log.info("shutting down SugboDoc API")
 
 
 app = FastAPI(title="SugboDoc Support API", lifespan=lifespan)
 
-# Demo-open CORS. Lock `allow_origins` to your site's origin before shipping.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# --------------------------------------------------------------------------- #
+# Request logging + safe error envelope. One line per request:
+#   POST /chat -> 200 (143ms)
+# An unhandled exception is logged with a traceback server-side but the client
+# only sees a generic 500 — never a stack trace or an internal path.
+# --------------------------------------------------------------------------- #
+@app.middleware("http")
+async def _log_and_guard(request: Request, call_next):
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        log.exception("unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "internal error"})
+    took_ms = (time.perf_counter() - start) * 1000
+    log.info("%s %s -> %d (%.0fms)", request.method, request.url.path,
+             response.status_code, took_ms)
+    return response
+
+
+# --------------------------------------------------------------------------- #
+# Rate limit — a per-IP sliding window, purely in-process. It resets on every
+# redeploy and is not shared between instances, so it is NOT a security control;
+# it exists to stop one client (or a bot) from draining the Gemini free-tier
+# quota in a minute. RATE_LIMIT_PER_MIN=0 disables it.
+# --------------------------------------------------------------------------- #
+_HITS: dict[str, deque[float]] = {}
+_RATE_LIMITED_PATHS = ("/chat", "/tell-me-more", "/ticket")
+
+
+@app.middleware("http")
+async def _rate_limit(request: Request, call_next):
+    limit = config.RATE_LIMIT_PER_MIN
+    if limit > 0 and request.url.path in _RATE_LIMITED_PATHS:
+        ip = (request.client.host if request.client else "unknown")
+        now = time.monotonic()
+        hits = _HITS.setdefault(ip, deque())
+        while hits and now - hits[0] > 60:
+            hits.popleft()
+        if len(hits) >= limit:
+            log.warning("rate limit hit: %s on %s", ip, request.url.path)
+            return JSONResponse(status_code=429,
+                                content={"detail": "too many requests, slow down"})
+        hits.append(now)
+    return await call_next(request)
+
 
 # In-process fallback session store, used only when no DATABASE_URL is configured.
 _MEM: dict[str, engine.Conversation] = {}
+
+
+# --------------------------------------------------------------------------- #
+# CORS — added last so it is the OUTERMOST middleware (it must see the raw
+# request, incl. OPTIONS preflight, before anything else). The bundled widget is
+# served from THIS app (same origin) so it needs nothing here; `CORS_ORIGINS`
+# only has entries if you embed the widget on another domain. Empty list = no
+# cross-origin access. We never fall back to "*".
+# --------------------------------------------------------------------------- #
+if config.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.CORS_ORIGINS,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Content-Type"],
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -153,14 +239,35 @@ class TicketIn(BaseModel):
 
 @app.get("/healthz")
 def healthz() -> dict:
+    """Liveness. Answers as long as the process is up — deliberately touches
+    NOTHING external (no DB, no Gemini). This is what Render's health check hits;
+    if it depended on the DB, a paused Supabase project would make Render think
+    the app is down and stop routing traffic to it, even though the in-memory
+    fallback would still serve chats."""
     return {
         "status": "ok",
+        "env": config.ENV,
         "backend": config.LLM_BACKEND,
         "answer_model": config.ANSWER_MODEL,
-        "jira_configured": jira_client.jira_configured(),
         "session_store": "postgres" if db.enabled() else "memory",
-        "active_sessions": _count(),
     }
+
+
+@app.get("/readyz")
+def readyz() -> JSONResponse:
+    """Readiness. Can the app actually do its job right now? Checks the database
+    (a `SELECT 1`) when one is configured. 200 = ready, 503 = degraded. The
+    widget still works in the 503 case (in-memory sessions, chat logs to file),
+    so this is monitoring signal, not a hard gate."""
+    db_state = "ok" if db.ping() else ("down" if db.enabled() else "disabled")
+    body = {
+        "status": "ready" if db_state in ("ok", "disabled") else "degraded",
+        "database": db_state,
+        "jira_configured": jira_client.jira_configured(),
+        "active_sessions": _count() if db_state != "down" else None,
+    }
+    return JSONResponse(status_code=200 if body["status"] == "ready" else 503,
+                        content=body)
 
 
 @app.post("/chat")

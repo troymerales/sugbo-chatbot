@@ -1,0 +1,12 @@
+# Standalone-demo theme. The umbrella app has its own .streamlit/config.toml —
+# this file does NOT get merged (see MERGE.md).
+[theme]
+primaryColor = "#3b41d6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f4f5fb"
+textColor = "#1f2430"
+font = "sans serif"
+
+[server]
+# Community Cloud ignores this; useful for local `streamlit run`.
+headless = true

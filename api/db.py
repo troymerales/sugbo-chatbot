@@ -9,8 +9,11 @@ Two tables, created by `db_init.py` (or `db.init_db()`):
                     so a restart or a second uvicorn worker doesn't lose it. The
                     row is deleted once the conversation reaches a terminal
                     stage — by then it is in `chat_logs`.
-    chat_logs       one row per *finished* conversation. This is the
-                    analytics/eval feed that used to be `logs/chats.jsonl`.
+    chat_logs       one row per conversation, keyed by conversation_id. Written
+                    the moment a chat goes wrong (outcome `unresolved`) and
+                    updated in place if it later reaches a ticket / resolution.
+                    This is the analytics/eval feed that used to be
+                    `logs/chats.jsonl`.
 
 Everything here is opt-in. With no `DATABASE_URL` set, `db.enabled()` is False
 and the callers fall back to the in-memory dict / JSONL file exactly as before,
@@ -123,6 +126,20 @@ def enabled() -> bool:
     return bool(getattr(config, "DATABASE_URL", None))
 
 
+def ping() -> bool:
+    """Cheap `SELECT 1` for the /readyz probe. True if the DB answers, False on
+    any error (paused Supabase project, wrong credentials, network). Never
+    raises — the caller decides what a False means."""
+    if not enabled():
+        return False
+    try:
+        with session() as s:
+            s.execute(select(1))
+        return True
+    except Exception:
+        return False
+
+
 def _get_engine():
     global _engine, _Session
     if _engine is None:
@@ -138,6 +155,11 @@ def _get_engine():
             # stale one in the first place.
             kw["pool_pre_ping"] = True
             kw["pool_recycle"] = 1800
+            # Keep the pool small — Supabase's free session pooler caps total
+            # connections per project, and several Render instances + the local
+            # analytics scripts all draw from the same budget.
+            kw["pool_size"] = getattr(config, "DB_POOL_SIZE", 5)
+            kw["max_overflow"] = getattr(config, "DB_MAX_OVERFLOW", 2)
         _engine = create_engine(url, **kw)
         _Session = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
     return _engine
@@ -264,6 +286,43 @@ def insert_chat_log(record: dict) -> None:
             question_count=int(record.get("question_count", 0) or 0),
             record=record,
         ))
+    _run(op)
+
+
+def upsert_chat_log(record: dict) -> None:
+    """Insert a finished-conversation row, or update the existing one for this
+    ``conversation_id`` in place. A chat is logged the moment it goes wrong
+    (outcome ``unresolved``) and the row is then updated if it later reaches a
+    ticket / duplicate-link / resolution — so a thumbs-down that never becomes a
+    ticket is still captured, without a duplicate row.
+
+    Matched on ``conversation_id`` (there is no unique constraint — legacy rows
+    may duplicate it, so the newest wins)."""
+    cid = str(record.get("conversation_id", ""))
+
+    def op(s):
+        row = None
+        if cid:
+            row = s.scalar(
+                select(ChatLogRow)
+                .where(ChatLogRow.conversation_id == cid)
+                .order_by(ChatLogRow.id.desc())
+            )
+        if row is None:
+            s.add(ChatLogRow(
+                conversation_id=cid,
+                started_at=str(record.get("started_at", "")),
+                ended_at=str(record.get("ended_at", "")),
+                outcome=str(record.get("outcome", "")),
+                question_count=int(record.get("question_count", 0) or 0),
+                record=record,
+            ))
+        else:
+            row.started_at = str(record.get("started_at", ""))
+            row.ended_at = str(record.get("ended_at", ""))
+            row.outcome = str(record.get("outcome", ""))
+            row.question_count = int(record.get("question_count", 0) or 0)
+            row.record = record
     _run(op)
 
 

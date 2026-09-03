@@ -37,6 +37,7 @@ class Conversation:
     stage: str = "chat"                       # chat | feedback | offer_ticket | done
     grounding_checks: list[dict] = field(default_factory=list)
     failure_signals: list[str] = field(default_factory=list)
+    failure_reasons: list[str] = field(default_factory=list)   # human-readable "why", for triage
     thumbs: str | None = None
     ticket_id: str | None = None
     ticket_category: str | None = None
@@ -113,7 +114,14 @@ def _enter_failure(conv: Conversation, *, grounding_failed: bool = False,
         conv.messages, thumbs_down=thumbs_down, grounding_failed=grounding_failed
     )
     conv.failure_signals = sorted(set(conv.failure_signals) | set(sig.as_list()))
+    for reason in sig.reasons:
+        if reason not in conv.failure_reasons:
+            conv.failure_reasons.append(reason)
     conv.stage = "offer_ticket"
+    # Log the failure now, so a chat that goes wrong is captured even if the
+    # user never files a ticket. submit_ticket / link_duplicate / feedback
+    # update this same row (chatlog.append is an upsert on conversation_id).
+    _log(conv, "unresolved")
 
 
 # --------------------------------------------------------------------------- #
@@ -198,8 +206,10 @@ def _state(conv: Conversation, *, extra: dict | None = None) -> dict:
 
 
 def _log(conv: Conversation, outcome: str) -> None:
-    if conv.logged:
-        return
+    # Not guarded by conv.logged: the first call writes an interim `unresolved`
+    # row, later calls update it in place (chatlog.append upserts on
+    # conversation_id). log_abandoned() keeps its own guard so a chat that
+    # already reached a terminal outcome is not overwritten with "abandoned".
     chatlog.append(chatlog.ConversationRecord(
         conversation_id=conv.id,
         started_at=conv.started_at,
@@ -208,6 +218,7 @@ def _log(conv: Conversation, outcome: str) -> None:
         question_count=conv.question_count,
         messages=list(conv.messages),
         failure_signals=list(conv.failure_signals),
+        failure_reasons=list(conv.failure_reasons),
         grounding_checks=list(conv.grounding_checks),
         thumbs=conv.thumbs,
         ticket_id=conv.ticket_id,
@@ -244,6 +255,7 @@ def serialize(conv: Conversation) -> dict:
         "stage": conv.stage,
         "grounding_checks": conv.grounding_checks,
         "failure_signals": conv.failure_signals,
+        "failure_reasons": conv.failure_reasons,
         "thumbs": conv.thumbs,
         "ticket_id": conv.ticket_id,
         "ticket_category": conv.ticket_category,
@@ -267,6 +279,7 @@ def deserialize(data: dict) -> Conversation:
         stage=data.get("stage", "chat"),
         grounding_checks=list(data.get("grounding_checks", [])),
         failure_signals=list(data.get("failure_signals", [])),
+        failure_reasons=list(data.get("failure_reasons", [])),
         thumbs=data.get("thumbs"),
         ticket_id=data.get("ticket_id"),
         ticket_category=data.get("ticket_category"),

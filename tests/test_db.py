@@ -46,6 +46,17 @@ def test_chat_log_round_trip_via_db(pg):
     assert loaded[1].triage_label == "docs_gap"
 
 
+def test_append_upserts_on_conversation_id_via_db(pg):
+    chatlog.append(_rec(conversation_id="c1", outcome="unresolved",
+                        failure_signals=["thumbs_down"]))
+    chatlog.append(_rec(conversation_id="c1", outcome="ticket_filed",
+                        ticket_id="KAN-9"))
+    loaded = chatlog.load_all()
+    assert [c.conversation_id for c in loaded] == ["c1"]   # one row, not two
+    assert loaded[0].outcome == "ticket_filed"
+    assert loaded[0].ticket_id == "KAN-9"
+
+
 def test_reset_store_clears_the_table(pg):
     chatlog.append(_rec(conversation_id="c1"))
     chatlog.reset_store()
@@ -105,7 +116,10 @@ def test_service_persists_sessions_to_db(pg, monkeypatch):
         assert db.load_conversation(cid) is not None       # persisted mid-conversation
 
         h = c.get("/healthz").json()
-        assert h["session_store"] == "postgres" and h["active_sessions"] == 1
+        assert h["session_store"] == "postgres"        # liveness — no DB touch
+        rz = c.get("/readyz")
+        assert rz.status_code == 200
+        assert rz.json()["database"] == "ok" and rz.json()["active_sessions"] == 1
 
         c.post("/feedback", json={"conversation_id": cid, "helpful": True})
         assert db.load_conversation(cid) is None           # dropped on terminal stage

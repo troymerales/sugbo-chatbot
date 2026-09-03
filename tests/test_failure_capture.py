@@ -23,6 +23,24 @@ def test_refusal_signal():
     ))
     assert sig.refused and sig.failed
     assert "refused" in sig.as_list()
+    assert "bot could not answer from the docs" in sig.reasons
+
+
+def test_reasons_are_human_readable_and_cover_each_signal():
+    sig = fc.detect_failures(
+        _msgs(("user", "how do I add vitals"),
+              ("assistant", "..."),
+              ("user", "how do i add vitals?"),
+              ("assistant", "..."),
+              ("user", "that's wrong")),
+        thumbs_down=True, grounding_failed=True,
+    )
+    assert sig.reasons == [
+        "user pressed thumbs-down",
+        "verification pass rejected an answer",
+        "user re-asked the same question",
+        "user said the answer was wrong / unhelpful",
+    ]
 
 
 def test_repeated_question_signal_fuzzy():

@@ -52,6 +52,8 @@ def main() -> None:
     ticket_filed = [c for c in convs if c.outcome == "ticket_filed"]
     linked_dup = [c for c in convs if c.outcome == "linked_duplicate"]
     abandoned = [c for c in convs if c.outcome == "abandoned"]
+    # chat went wrong, ticket offered, user left without filing one
+    unresolved = [c for c in convs if c.outcome == "unresolved"]
     thumbs_up = [c for c in convs if c.thumbs == "up"]
     thumbs_down = [c for c in convs if c.thumbs == "down"]
     any_refusal = [c for c in convs if "refused" in c.failure_signals]
@@ -65,6 +67,7 @@ def main() -> None:
     print(f"  containment (resolved, no ticket)   {pct(len(resolved), n)}")
     print(f"  ticket-filed rate                   {pct(len(ticket_filed), n)}")
     print(f"  duplicate-linked rate               {pct(len(linked_dup), n)}")
+    print(f"  unresolved (no ticket filed) rate   {pct(len(unresolved), n)}")
     print(f"  abandoned rate                      {pct(len(abandoned), n)}")
     print("-" * 52)
     print(f"  thumbs-up rate                      {pct(len(thumbs_up), len(thumbs_up) + len(thumbs_down))}")

@@ -55,6 +55,7 @@ def init_state() -> None:
     ss.setdefault("stage", "chat")            # chat | feedback | offer_ticket | done
     ss.setdefault("grounding_checks", [])
     ss.setdefault("failure_signals", [])
+    ss.setdefault("failure_reasons", [])
     ss.setdefault("thumbs", None)             # "up" | "down" | None
     ss.setdefault("last_ticket_id", None)
     ss.setdefault("duplicate_of", None)
@@ -67,7 +68,7 @@ def reset_conversation(*, log_abandoned: bool = True) -> None:
         _log_conversation("abandoned")
     for key in (
         "conversation_id", "started_at", "messages", "question_count", "stage",
-        "grounding_checks", "failure_signals", "thumbs",
+        "grounding_checks", "failure_signals", "failure_reasons", "thumbs",
         "last_ticket_id", "duplicate_of", "logged", "chat", "ticket_draft",
         "open_ticket_dialog", "dup_dismissed", "needed_by", "due_date",
     ):
@@ -91,6 +92,7 @@ def _log_conversation(outcome: str) -> None:
         question_count=ss["question_count"],
         messages=list(ss["messages"]),
         failure_signals=sorted(set(ss.get("failure_signals", []))),
+        failure_reasons=list(ss.get("failure_reasons", [])),
         grounding_checks=list(ss.get("grounding_checks", [])),
         thumbs=ss.get("thumbs"),
         ticket_id=ss.get("last_ticket_id"),
@@ -130,7 +132,13 @@ def _enter_failure(*, grounding_failed: bool = False, thumbs_down: bool = False)
         ss.messages, thumbs_down=thumbs_down, grounding_failed=grounding_failed
     )
     ss.failure_signals = sorted(set(ss.failure_signals) | set(signals.as_list()))
+    for reason in signals.reasons:
+        if reason not in ss.failure_reasons:
+            ss.failure_reasons.append(reason)
     ss.stage = "offer_ticket"
+    # Capture the failed chat now; if a ticket / duplicate-link follows it
+    # updates this same row (chatlog.append upserts on conversation_id).
+    _log_conversation("unresolved")
 
 
 # --------------------------------------------------------------------------- #
@@ -285,6 +293,8 @@ with st.sidebar:
     st.metric("Questions this chat", st.session_state.question_count)
     if st.session_state.get("failure_signals"):
         st.caption("⚠️ signals: " + ", ".join(st.session_state["failure_signals"]))
+    if st.session_state.get("failure_reasons"):
+        st.caption("↳ " + "; ".join(st.session_state["failure_reasons"]))
 
     if st.button("Start a new chat"):
         reset_conversation()

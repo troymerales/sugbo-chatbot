@@ -134,6 +134,14 @@ def generate(*, contents: list[dict], system: str | None, json_mode: bool) -> st
     return _mock_answer(prompt)
 
 
+def generate_stream(*, contents: list[dict], system: str | None):
+    """Stream the deterministic answer in small fixed-size chunks so the widget
+    exercises the streaming path with no API key. Text is emitted verbatim."""
+    text = generate(contents=contents, system=system, json_mode=False)
+    for i in range(0, len(text), 24):
+        yield text[i:i + 24]
+
+
 # --------------------------------------------------------------------------- #
 # embed  — hashed bag-of-words, L2-normalised (deterministic, lexical cosine)
 # --------------------------------------------------------------------------- #

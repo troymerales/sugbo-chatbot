@@ -1,0 +1,56 @@
+# Render Blueprint — infrastructure as code for the one service this project needs.
+#
+# Apply it: Render Dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file, creates the service, and PROMPTS you for every `sync: false` value
+# (the secrets) once. After that, manage secrets in the dashboard.
+#
+# You can also just create the service by hand (New -> Web Service -> this repo,
+# runtime = Docker); this file only documents the intended shape. See
+# study/RUNBOOK.md and study/02-compute-render.md.
+
+services:
+  - name: sugbodoc-api
+    type: web                     # public HTTPS service (Render terminates TLS)
+    runtime: docker               # build from ./Dockerfile
+    plan: free                    # 0.1 CPU / 512 MB, sleeps after 15 min idle, $0
+    region: singapore             # closest free region to the Supabase ap-south / SEA users
+    branch: main                  # deploys are driven by GitHub Actions (see .github/workflows/deploy.yml)
+    autoDeploy: false             #   ^ so tests gate the deploy; Render's own auto-deploy is off
+    healthCheckPath: /healthz     # liveness only — never touches the DB (see api/service.py)
+
+    envVars:
+      # --- set once, at Blueprint creation (secrets: never in git) ---
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL         # Supabase *session pooler* string, incl. password
+        sync: false
+      - key: JIRA_BASE_URL
+        sync: false
+      - key: JIRA_EMAIL
+        sync: false
+      - key: JIRA_API_TOKEN
+        sync: false
+      - key: JIRA_PROJECT_KEY
+        sync: false
+      - key: SENTRY_DSN           # optional — leave blank to disable error tracking
+        sync: false
+
+      # --- non-secret config: safe to keep in this file ---
+      - key: ENV
+        value: prod
+      - key: LOG_LEVEL
+        value: INFO
+      - key: RATE_LIMIT_PER_MIN
+        value: "30"
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "2"
+      - key: JIRA_ISSUE_TYPE
+        value: Task
+      # PORT is injected by Render automatically — do NOT set it here.
+      # CORS_ORIGINS stays unset: the widget is served from this same service.
+
+    # The full private knowledge base is added in the dashboard as a "Secret File"
+    # at path docs/SugboDoc-Documentation.md (Environment -> Secret Files). If it
+    # is absent the app falls back to the committed docs/SugboDoc-Documentation.sample.md.
