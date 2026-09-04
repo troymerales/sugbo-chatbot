@@ -1,9 +1,8 @@
 """
-Central configuration for the SugboDoc assistant.
+Central configuration for the SugboDoc chatbot (`core/`, `assistant/`).
 
-Every other module imports paths, model names and thresholds from here so the
-runtime bot, the eval harness and the analytics scripts all agree on one setup.
-`.env` is loaded exactly once, here.
+Paths, model names, thresholds and feature toggles live here. `.env` is loaded
+exactly once, here. The STT side has its own `stt/config.py`.
 """
 
 from __future__ import annotations
@@ -34,8 +33,6 @@ DOCS_PATH = DOCS_DIR / "SugboDoc-Documentation.md"
 if not DOCS_PATH.exists():
     DOCS_PATH = DOCS_DIR / "SugboDoc-Documentation.sample.md"
 
-SYSTEM_PROMPT_PATH = DOCS_DIR / "system-prompt.md"
-
 # logs/ holds the local chat-log JSONL + its CSV mirror and the LLM response
 # cache. On a read-only or ephemeral host (Streamlit Community Cloud) fall back
 # to a temp dir so `import config` never fails — there the durable store is
@@ -53,15 +50,6 @@ CHAT_LOG_PATH = LOG_DIR / "chats.jsonl"
 # Local flattened mirror of every logged conversation, written even when the
 # primary store is Postgres. For eyeballing in a spreadsheet; never read back.
 CHAT_LOG_CSV_PATH = LOG_DIR / "chats.csv"
-DOC_GAP_QUEUE_PATH = LOG_DIR / "doc_gap_queue.json"
-
-EVAL_DIR = ROOT / "evaluation"
-EVAL_SET_PATH = EVAL_DIR / "eval_set.jsonl"
-EVAL_GENERATED_PATH = EVAL_DIR / "eval_generated.jsonl"
-SCORECARD_MD_PATH = EVAL_DIR / "eval_scorecard.md"
-SCORECARD_JSON_PATH = EVAL_DIR / "eval_scorecard.json"
-
-DOC_PROPOSALS_DIR = ROOT / "doc_proposals"
 
 LLM_CACHE_PATH = LOG_DIR / "llm_cache.sqlite"
 
@@ -101,54 +89,22 @@ LLM_CACHE = os.environ.get("LLM_CACHE", "1") != "0"
 LLM_OFFLINE = os.environ.get("LLM_OFFLINE", "0") == "1"
 
 # --------------------------------------------------------------------------- #
-# Database  (FastAPI backend persistence — service.py + chatlog.py)
+# Chat-log persistence  (core/chatlog.py -> core/chatlog_db.py)
 # --------------------------------------------------------------------------- #
 
-# SQLAlchemy URL. When unset, the backend keeps sessions in an in-process dict
-# and writes finished conversations to logs/chats.jsonl — fine for the Streamlit
-# demo and the offline test-suite. When set, live sessions live in a
-# `conversations` table and finished conversations in `chat_logs`, so several
-# uvicorn workers can share state and nothing is lost on restart. PostgreSQL is
-# the intended target:
-#     postgresql+psycopg://user:pass@localhost:5432/sugbodoc
-# Run `python db_init.py` once to create the schema.
+# SQLAlchemy URL. Unset -> finished conversations are written to
+# logs/chats.jsonl (fine locally + for tests; ephemeral on Community Cloud).
+# Set -> they go to the `chat_logs` table (created on first use). Use Supabase's
+# Session-pooler string (IPv4):
+#     postgresql://postgres.<ref>:<pass>@aws-0-<region>.pooler.supabase.com:5432/postgres
 DATABASE_URL = os.environ.get("DATABASE_URL") or None
 
-# Echo every SQL statement to stderr (debugging only).
 DB_ECHO = os.environ.get("DB_ECHO", "0") == "1"
 
-# SQLAlchemy pool sizing. Deliberately small: a managed pooler (Supabase's free
-# session pooler) caps total connections, and one Render instance opening a big
-# pool can starve the others / the analytics scripts. pool_size = kept-open
-# connections, max_overflow = extra it may open under load then discard.
+# SQLAlchemy pool sizing — kept small, Supabase's free session pooler caps total
+# connections per project.
 DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "5"))
 DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "2"))
-
-# --------------------------------------------------------------------------- #
-# Deployment / runtime  (api/service.py — see docs/architecture.md)
-# --------------------------------------------------------------------------- #
-
-# Free-text environment tag. Surfaced in logs and GET /healthz so you can tell a
-# prod incident from a local one at a glance. No behaviour depends on it.
-ENV = os.environ.get("ENV", "dev")
-
-# Backend log verbosity. Logs are written to stdout (12-factor) so the hosting
-# platform captures them; nothing is written to a log file in the cloud.
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
-
-# Cross-origin browsers allowed to call the API. The bundled widget is served
-# from the same origin, so this stays empty unless you embed the widget on
-# another site. Comma-separated. "*" is intentionally NOT a supported default.
-CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
-
-# Per-client-IP request cap (requests / minute), a cheap backstop against
-# burning the Gemini free-tier quota. In-process, per-instance, resets on
-# redeploy. 0 disables it. See the RateLimitMiddleware in api/service.py.
-RATE_LIMIT_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", "30"))
-
-# Sentry DSN for error tracking. Unset (default) => sentry-sdk is not imported
-# and nothing is sent anywhere.
-SENTRY_DSN = os.environ.get("SENTRY_DSN") or None
 
 # --------------------------------------------------------------------------- #
 # Retrieval  (RAG toggle — see core/retrieval.py and core/knowledge.py)

@@ -1,192 +1,64 @@
-# Merging the support assistant into the umbrella "SugboDoc" app
+# Consolidation notes — SugboDoc = one repo
 
-This repo is a **standalone Streamlit app** (`streamlit run streamlit_app.py`)
-*and* a **drop-in package** for the umbrella multipage app
-(`github.com/troymerales/stt_soap` → "SugboDoc"). This file is the checklist for
-the second use.
-
-The umbrella, as described:
+**`troymerales/sugbo-chatbot` is the single SugboDoc app.** The support chatbot and
+the Bisaya speech→SOAP tool (formerly `troymerales/stt_soap`) now live here as one
+pure-Streamlit multipage app. Both `stt_soap` and the chatbot's old FastAPI /
+Docker / Render backend are retired — keep `stt_soap` only as source history for
+`stt/`.
 
 ```
-streamlit_app.py                     eClinic dashboard (static replica, iframe) + a dead 💬 button (assistant.js)
-pages/1_Consultation_Transcript.py    speech-to-text SOAP page
-pages/… (Notes, Evaluation, …)
-core/                                pure-Python shared package, ZERO `import streamlit`
-  config.py                          reads st.secrets, falls back to os.environ
-  gemini.py                          one Gemini client — secret GEMINI_API_KEY, model gemini-3.6-flash
-requirements.txt                     one file
-.streamlit/secrets.toml              one file
+streamlit_app.py                     home: dashboard backdrop + page links + floating assistant
+pages/1_Consultation_Transcript.py   audio → transcript → SOAP → extract → review → save
+pages/2_Past_Notes.py                browse / edit / re-run / export saved notes
+pages/3_Evaluation.py                ASR (WER/CER) + SOAP grounding vs trial/
+assistant/                           the chatbot's floating widget (on every page)
+core/                                chatbot pipeline (bot, knowledge, llm, grounding, engine, …)
+stt/                                 STT→SOAP library — ported from stt_soap/core/
+stt_ui.py                            Streamlit helpers for the STT pages
+trial/                               STT/SOAP evaluation fixtures
 ```
 
-The assistant becomes **a shared floating widget** on the Homepage and the
-Consultation Transcript page (and any other page you add the one-liner to).
+## What was ported from `stt_soap`, and how
 
----
-
-## 1. What to copy
-
-| From this repo | To the umbrella | Notes |
+| `stt_soap` source | here | change |
 |---|---|---|
-| `assistant/` (whole package) | `assistant/` | The Streamlit layer. `widget.py`, `session.py`, `ticket_dialog.py`, `styles.py`. |
-| `core/*.py` except none — copy all: `bot` `knowledge` `llm` `grounding` `engine` `failure_capture` `ticketing` `jira_client` `jira_dedup` `chatlog` `retrieval` `_gemini_backend` `_mock_backend` `cli` | `core/` | No filename clash with the umbrella's `core/config.py` / `core/gemini.py`. Merge the two `core/__init__.py` docstrings by hand. |
-| `config.py` (repo root) | `core/chatbot_config.py` | **Rename on copy** — the umbrella already has a `core/config.py` that does a different job. |
-| `api/db.py` `api/db_init.py` `api/schema.sql` | `api/` | Only needed if you want chat-log persistence to Supabase (recommended). `db.py` is import-clean; nothing pulls FastAPI. |
-| `docs/SugboDoc-Documentation.sample.md` (and your private `docs/SugboDoc-Documentation.md` if you use it) | `docs/` | The knowledge base the assistant is grounded on. `config.DOCS_PATH` picks up the private file automatically if present. |
-| `evaluation/` `analytics/` | optional | The offline eval + docs-improvement loop. Batch/local only — not imported by any page. Needs `requirements-analytics.txt` extras. |
+| `core/transcribe.py` | `stt/asr.py` + `stt/quality.py` | **local Whisper (torch/transformers) removed.** `stt/asr.py` POSTs the audio to the fine-tuned checkpoint `troxyz1268/whisper-small-bisaya` on the **HF Inference API** — no Gemini in the ASR path. `TranscriptionResult` + quality warnings moved to `stt/quality.py`. |
+| `core/diarize.py` (pyannote) | *dropped* | no torch, no diarization. The SOAP prompt already handles an unlabelled transcript ("infer the roles from context"). |
+| `core/gemini.py` | `stt/gemini.py` | reuses the chatbot's cached Gemini client (one key). SOAP / extract / review only. Honours `config.LLM_BACKEND == "mock"` — returns canned objects so the whole suite is offline. |
+| `core/config.py` `Settings` | `stt/config.py` | same `Settings`/`get_settings()` shape; reads `os.environ` (populated by `assistant/bootstrap.py`). Dropped `chunk/stride`, `home_url`, `diar_num_speakers`; added `hf_inference_url`, `asr_available`. |
+| `core/soap.py` `extract.py` `review.py` `schemas.py` `db.py` `export.py` `evaluation.py` `audio.py` | `stt/*` | near-verbatim; imports repointed `core.* → stt.*`. `db.py → stt/notes_db.py`. `audio.py` reads bytes + WAV-header duration (no ffmpeg). |
+| `app.py` + `pages/1_Past_Notes.py` + `pages/2_Evaluation.py` | `pages/1_Consultation_Transcript.py`, `pages/2_Past_Notes.py`, `pages/3_Evaluation.py` | audio → bytes; `warm_pipeline()` + the diarize checkbox removed; `render_floating_assistant()` added to each. |
+| `stt_ui.py` | `stt_ui.py` | dropped `load_pipeline` / `warm_pipeline`; sidebar shows the HF model + a link back to the dashboard. |
+| `api/main.py` + `web/consult*.{html,js}` | *not ported* | the app is Streamlit-only. |
+| `tests/test_{config,soap,db,export,evaluation,gemini,transcribe}.py` | `tests/test_stt_{core,gemini,page}.py` | ported + adapted. `test_diarize.py` / `test_api.py` dropped. |
+| `docs/handbook.html`, `docs/build_handbook.py` | *not ported* | see `docs/PROJECT.md`. |
+| `requirements.txt` (torch, transformers, torchvision, pyannote) | *removed* | `jiwer`, `reportlab`, `pandas`, `pydantic` kept. `packages.txt` (ffmpeg) gone. |
 
-**Do NOT copy:** `streamlit_app.py`, `app.py`, `api/service.py`, `web/`,
-`Dockerfile`, `docker-compose.yml`, `render.yaml`, `.github/workflows/`,
-`.streamlit/config.toml`, `study/`, `requirements*.txt`. Those are the
-standalone repo's own delivery/deploy shells.
+## What was removed from the chatbot side
 
----
+The FastAPI backend (`api/service.py`), `api/db_init.py`, `api/schema.sql`,
+`Dockerfile`, `docker-compose.yml`, `render.yaml`, `.dockerignore`,
+`docs/architecture.md`, `keepalive.yml`, `app.py` (old full-page demo), the
+offline eval harness (`evaluation/`), the failure-clustering / docs-loop
+tooling (`analytics/`), `scripts/`, `core/cli.py`, and the JS/widget in
+`web/index.html` (replaced by `web/dashboard.html`). `api/db.py` was trimmed to
+just chat-log persistence and moved to `core/chatlog_db.py`. CI is now a single
+test job.
 
-## 2. The two seams (the only code edits)
+## Config seams
 
-### SEAM #1 — secrets → env
+- **Secrets:** every page calls `assistant.bootstrap.load_secrets()` first
+  (st.secrets → os.environ). `stt/` and `core/` only read `os.environ`.
+- **One Gemini key/client:** `stt/gemini._client()` reuses `core/_gemini_backend._client()`.
+- **`GEMINI_API_KEY`** → chatbot answer/verify + SOAP / extract / review.
+  **`HF_TOKEN`** → transcription. **`GEMINI_MODEL`** sets the chatbot answer model
+  and the SOAP model; **`BISAYA_WHISPER_MODEL_ID`** sets the ASR checkpoint.
 
-`assistant/bootstrap.py` copies `st.secrets` into `os.environ` so `core/` never
-imports Streamlit. The umbrella's `core/config.py` already does this.
+## Known follow-ups
 
-- **Delete** `assistant/bootstrap.py`.
-- In `assistant/session.py`, `assistant/widget.py`, `assistant/ticket_dialog.py`
-  there is **no** import of `bootstrap` — nothing to change there.
-- Wherever the umbrella loads secrets at startup (its `streamlit_app.py` or a
-  shared helper), make sure it runs **before** the first page imports
-  `assistant.widget`. If the umbrella doesn't have a startup secret-load yet,
-  keep `bootstrap.py` and call `load_secrets()` at the top of each page.
-
-### SEAM #2 — the Gemini client
-
-`core/_gemini_backend.py::_client()` builds its own `genai.Client`. Point it at
-the umbrella's shared client:
-
-```python
-@functools.lru_cache(maxsize=1)
-def _client() -> genai.Client:
-    from core.gemini import client        # the umbrella's shared client
-    return client()
-```
-
-Nothing else changes — same `google-genai` SDK, same call shape, and
-`core/llm.py` is untouched.
-
-### The `import config` rename
-
-This repo's `core/*` modules do `import config` (root module). After copying
-`config.py` → `core/chatbot_config.py`, run one search-replace across the copied
-files:
-
-```bash
-# from the umbrella repo root, on the files you copied in:
-grep -rl '^import config$' core/ assistant/ api/ evaluation/ analytics/ \
-  | xargs sed -i 's/^import config$/from core import chatbot_config as config/'
-```
-
-(`assistant/*` import `config` as `import config` too — same rename.) Then align
-the model default: in `core/chatbot_config.py` set
-`ANSWER_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")` to match the
-umbrella, or just set `GEMINI_MODEL` in secrets.
-
----
-
-## 3. Secrets to add to `.streamlit/secrets.toml`
-
-The assistant reuses `GEMINI_API_KEY` — already there. Add:
-
-```toml
-# Jira — outbound support-ticket creation
-JIRA_BASE_URL   = "https://your-domain.atlassian.net"
-JIRA_EMAIL      = "you@example.com"
-JIRA_API_TOKEN  = "your-atlassian-api-token"
-JIRA_PROJECT_KEY = "KAN"
-JIRA_ISSUE_TYPE = "Task"
-
-# Chat-log persistence (recommended — keeps the analytics/eval loop alive).
-# Supabase Session-pooler URL. Run `python -m api.db_init` once after setting it.
-DATABASE_URL = "postgresql://postgres.<ref>:<pass>@aws-0-<region>.pooler.supabase.com:5432/postgres"
-
-# Optional
-# VERIFY_ANSWERS = "1"     # keep the verification pass on (default)
-# LLM_BACKEND    = "mock"  # offline canned answers, no key / quota
-```
-
-On Streamlit Community Cloud, paste the same TOML into **App → Settings →
-Secrets**. `assistant/bootstrap.py` / the umbrella's `core/config.py` maps every
-key to an environment variable of the same name.
-
----
-
-## 4. Wire the widget into pages
-
-At the **bottom** of `streamlit_app.py` (the Homepage) and
-`pages/1_Consultation_Transcript.py` — and any other page you want it on:
-
-```python
-from assistant.widget import render_floating_assistant
-
-render_floating_assistant()
-```
-
-One shared conversation follows the user across pages (state is in
-`st.session_state`, keys prefixed `asst_`). Call it once per page; calling it on
-a page that already rendered it is a harmless no-op-ish re-render.
-
-If you'd rather not repeat the import, add a helper next to the umbrella's other
-shared UI (e.g. `ui/chrome.py`):
-
-```python
-def page_chrome():
-    ...                                   # existing header / nav
-    from assistant.widget import render_floating_assistant
-    render_floating_assistant()
-```
-
----
-
-## 5. Replace the umbrella's dead 💬 button
-
-The umbrella's `streamlit_app.py` renders a decorative floating 💬 button that
-belonged to the old `assistant.js`. Remove it so there aren't two:
-
-- delete `assistant.js` (or whatever static file holds the old button/handler),
-- remove the `<button …>💬</button>` (and any related CSS) from the dashboard
-  replica HTML that gets passed to `st.components.v1.html`,
-- the real widget from `render_floating_assistant()` now occupies the same
-  bottom-right corner (`assistant/styles.py` pins it there).
-
-The dashboard iframe and the widget live in different layers (iframe vs. the
-main Streamlit document), so the widget floats over the iframe with no conflict.
-
----
-
-## 6. `requirements.txt` delta
-
-The umbrella needs these on top of what it already has (it already has
-`streamlit`, `google-genai`, `python-dotenv`):
-
-```
-requests>=2.31
-SQLAlchemy>=2.0          # only if you set DATABASE_URL (chat-log persistence)
-psycopg[binary]>=3.1     # ditto
-```
-
-`numpy` / `scikit-learn` are **not** needed by the widget — only by
-`analytics/analytics_cluster.py` (batch). Add them only if you run that job in
-the same environment.
-
----
-
-## 7. Post-merge checklist
-
-- [ ] `assistant/` + the `core/*` modules copied; `core/__init__.py` docstrings merged.
-- [ ] `config.py` → `core/chatbot_config.py`; `import config` rename applied.
-- [ ] SEAM #1: `bootstrap.py` deleted (or kept + called per page); secrets load before `assistant.widget` import.
-- [ ] SEAM #2: `_gemini_backend._client()` points at `core/gemini.py`.
-- [ ] Jira + (optional) `DATABASE_URL` in `.streamlit/secrets.toml`; `python -m api.db_init` run if using Postgres.
-- [ ] `GEMINI_MODEL` aligned to `gemini-3.6-flash`.
-- [ ] `render_floating_assistant()` at the bottom of the Homepage + Consultation Transcript page.
-- [ ] Old 💬 button + `assistant.js` removed.
-- [ ] `LLM_BACKEND=mock streamlit run streamlit_app.py` — widget answers, thumbs-down offers a ticket, ticket dialog opens.
-- [ ] With a real key: one real question streams a grounded answer; an off-docs question refuses and offers a ticket.
-- [ ] `pytest` (copy `tests/test_assistant.py` + `tests/_assistant_app.py` + `tests/conftest.py` if the umbrella runs the suite).
+- **SOAP notes are SQLite** (`stt/notes_db.py`), ephemeral on Community Cloud.
+  Natural next step: a Postgres `soap_notes` table sharing the chatbot's Supabase
+  — mirror the pattern in `core/chatlog_db.py`.
+- **Verify the HF endpoint.** HF's *free* serverless Inference API often refuses
+  custom small-Whisper models. If so, stand up a dedicated HF Inference Endpoint
+  and set `HF_INFERENCE_URL`.

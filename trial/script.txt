@@ -1,0 +1,22 @@
+[
+    "Doktor: Unsa man imong gibati karon? Pasyente: Sakit akong ulo sukad gahapon, Dok. Doktor: Naay hilanat o pagsuka? Pasyente: Wala, pero kapoy kaayo ko. Doktor: Okay, normal ra imong blood pressure ug temperature. Murag tension headache ra ni, so pahuway ug inom ug daghang tubig.",
+    
+    "Doktor: Kanus-a nagsugod imong ubo? Pasyente: Mga tulo ka adlaw na, Dok, labi na kung gabii. Doktor: Naay plema o lisod ang pagginhawa? Pasyente: Naay gamayng plema pero okay ra akong pagginhawa. Doktor: Klaro man imong lungs sa pagpaminaw. Likayi lang sa ang aso ug sigarilyo ug inom ug daghang tubig.",
+    
+    "Doktor: Asa dapit ang imong sakit sa tiyan? Pasyente: Sa ubos nga bahin sa tuo, Dok, sukad karong buntaga. Doktor: Kusog ba ang sakit? Naay suka o hilanat? Pasyente: Medyo sakit pero wala koy suka o hilanat. Doktor: Sige, ato ning obserbahan ug kung mosamot ang kasakit o maghilanat ka, kinahanglan mubalik dayon ka.",
+    
+    "Doktor: Kumusta imong tulog lately? Pasyente: Dili kaayo maayo, Dok. Mga upat ka oras ra kada gabii. Doktor: Mao ba, ug sige pud kag kape? Pasyente: Oo, mga tulo ka tasa kada adlaw. Doktor: Posible nga naka-contribute na ang kakulang sa tulog ug caffeine sa imong palpitations. Sulayi ug pahulay ug bawasi ang kape.",
+    
+    "Doktor: Naa pa gihapon imong sakit sa likod? Pasyente: Oo, pero mas maayo na kaysa gahapon. Doktor: Numbness o pamamanhid sa imong mga tiil? Pasyente: Wala, Dok. Doktor: Maayo. Base sa exam, murag muscle strain ra gyud. Pahuway sa, likayi ang pagbuhat ug bug-at, ug pwede ka mag-warm compress."
+],
+[
+    "Unsa man imong gibati karon? Sakit akong ulo sukad gahapon, Dok. Naay hilanat o pagsuka? Wala, pero kapoy kaayo ko. Okay, normal ra imong blood pressure ug temperature. Murag tension headache ra ni, so pahuway ug inom ug daghang tubig.",
+    
+    "Kanus-a nagsugod imong ubo? Mga tulo ka adlaw na, labi na kung gabii. Naay plema o lisod ang pagginhawa? Naay gamayng plema pero okay ra akong pagginhawa. Klaro man imong lungs sa pagpaminaw. Likayi lang sa ang aso ug sigarilyo ug inom ug daghang tubig.",
+    
+    "Asa dapit ang imong sakit sa tiyan? Sa ubos nga bahin sa tuo, sukad karong buntaga. Kusog ba ang sakit? Naay suka o hilanat? Medyo sakit pero wala koy suka o hilanat. Sige, ato ning obserbahan ug kung mosamot ang kasakit o maghilanat ka, kinahanglan mubalik dayon ka.",
+    
+    "Kumusta imong tulog lately? Dili kaayo maayo. Mga upat ka oras ra kada gabii. Sige pud kag kape? Oo, mga tulo ka tasa kada adlaw. Posible nga naka-contribute ang kakulang sa tulog ug caffeine sa imong palpitations. Sulayi ug pahulay ug bawasi ang kape.",
+    
+    "Naa pa gihapon imong sakit sa likod? Oo, pero mas maayo na kaysa gahapon. Numbness o pamamanhid sa imong mga tiil? Wala. Maayo. Base sa exam, murag muscle strain ra gyud. Pahuway sa, likayi ang pagbuhat ug bug-at, ug pwede ka mag-warm compress."
+]

@@ -1,5 +1,4 @@
-# Standalone-demo theme. The umbrella app has its own .streamlit/config.toml —
-# this file does NOT get merged (see MERGE.md).
+# Theme + server settings for the SugboDoc Streamlit app (streamlit_app.py + pages/).
 [theme]
 primaryColor = "#3b41d6"
 backgroundColor = "#ffffff"
@@ -8,5 +7,9 @@ textColor = "#1f2430"
 font = "sans serif"
 
 [server]
+# Audio uploads on the Consultation Transcript page.
+maxUploadSize = 200
 # Community Cloud ignores this; useful for local `streamlit run`.
 headless = true
+# Re-run the open page whenever a source file is saved -- no restart, no refresh.
+runOnSave = true

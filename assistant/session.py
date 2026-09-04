@@ -244,8 +244,8 @@ def file_ticket(*, name: str, email: str, subject: str, summary: str,
     ss.asst_messages.append({
         "role": "assistant",
         "content": (
-            f"✅ Ticket **[{key}]({jira_client.browse_url(key)})** created in "
-            f"Jira.\n\n**Subject:** {subject}{when}\n\nOur team will follow up "
+            f"✅ Ticket **[{key}]({jira_client.browse_url(key)})** created."
+            f"\n\n**Subject:** {subject}{when}\n\nOur team will follow up "
             f"at **{email}**."
         ),
     })

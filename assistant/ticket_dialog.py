@@ -22,7 +22,8 @@ def ticket_dialog() -> None:
 
     if not jira_client.jira_configured():
         st.error(
-            "Jira isn't configured. Set `JIRA_BASE_URL`, `JIRA_EMAIL`, "
+            "Ticketing isn't configured yet. Ask an administrator to set "
+            "`JIRA_BASE_URL`, `JIRA_EMAIL`, "
             "`JIRA_API_TOKEN` and `JIRA_PROJECT_KEY` (in `.streamlit/secrets.toml` "
             "or the environment), then reload."
         )
@@ -64,7 +65,7 @@ def ticket_dialog() -> None:
         )
         c_submit, c_cancel = st.columns(2)
         submitted = c_submit.form_submit_button(
-            "Submit to Jira", use_container_width=True
+            "Submit ticket", use_container_width=True
         )
         cancelled = c_cancel.form_submit_button("Cancel", use_container_width=True)
 
@@ -78,13 +79,13 @@ def ticket_dialog() -> None:
             st.error("Please fill in email, subject, and summary.")
             return
         try:
-            with st.spinner("Creating the Jira issue…"):
+            with st.spinner("Creating your ticket…"):
                 session.file_ticket(
                     name=name.strip(), email=email.strip(),
                     subject=subject.strip(), summary=summary.strip(),
                     needed_iso=needed.isoformat() if needed else None,
                 )
         except Exception as exc:  # noqa: BLE001
-            st.error(f"Couldn't create the Jira issue:\n\n{exc}")
+            st.error(f"Couldn't create the ticket:\n\n{exc}")
             return
         st.rerun()

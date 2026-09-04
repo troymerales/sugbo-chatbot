@@ -1,5 +1,0 @@
-# Failure clustering (analytics/analytics_cluster.py) — batch / local only.
-# Not needed by the app, the FastAPI backend, or the test-suite.
--r requirements.txt
-numpy>=1.26
-scikit-learn>=1.3

@@ -1,6 +1,0 @@
-# The old FastAPI backend (api/service.py). Kept so this repo stays deployable
-# the original way (Docker + Render); NOT used by the Streamlit path.
--r requirements.txt
-fastapi>=0.110
-uvicorn[standard]>=0.29
-sentry-sdk[fastapi]>=2.0    # error tracking — only active when SENTRY_DSN is set (import is guarded)

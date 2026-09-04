@@ -1,17 +1,25 @@
-# Streamlit runtime — streamlit_app.py + the assistant/ floating widget + core/.
-# Streamlit Community Cloud installs exactly this file.
+# Streamlit runtime for the whole SugboDoc app:
+#   streamlit_app.py (home + floating assistant), pages/ (Consultation Transcript,
+#   Past Notes, Evaluation), assistant/ (chatbot widget), core/ + stt/.
+# Streamlit Community Cloud installs exactly this file. No torch / transformers —
+# transcription is a hosted call (Gemini multimodal, or the HF Inference API).
 streamlit>=1.37
 google-genai>=1.0
 python-dotenv>=1.0
 requests>=2.31
+pydantic>=2
 
-# Chat-log persistence to Supabase (core/chatlog.py -> api/db.py). Only used
-# when DATABASE_URL is set; a lightweight install otherwise.
+# Chat-log persistence to Supabase (core/chatlog.py -> api/db.py). Only used when
+# DATABASE_URL is set; a lightweight install otherwise.
 SQLAlchemy>=2.0
 psycopg[binary]>=3.1
+
+# STT -> SOAP workflow (stt/, pages/)
+pandas>=2.0          # Past Notes / Evaluation tables
+jiwer>=3.0           # WER / CER scoring on the Evaluation page
+reportlab>=4.0       # PDF export of a saved note
 
 # Not here on purpose:
 #   fastapi / uvicorn        -> requirements-service.txt   (the old REST backend)
 #   numpy / scikit-learn     -> requirements-analytics.txt (batch failure clustering)
 #   pytest / httpx           -> requirements-dev.txt
-# The web widget (web/index.html) pulls marked.js + DOMPurify from a CDN — no pip.

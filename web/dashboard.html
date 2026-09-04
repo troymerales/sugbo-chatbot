@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  /* Content-only fragment for the SugboDoc dashboard. The left rail + top bar
+     are the real app shell (shell.py); everything here is a static mockup —
+     hover states only, nothing navigates. */
+  :root{
+    --indigo:#3b41d6; --ink:#1f2430; --muted:#6b7280; --line:#e6e7ef;
+    --bg:#f4f5fb; --card:#ffffff; --ok:#12805c; --ok-bg:#e5f4ee;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:var(--ink); background:var(--bg); padding:2px 2px 12px;
+  }
+  a{color:var(--indigo); text-decoration:none; cursor:pointer;}
+
+  .pagehead{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;}
+  .pagehead h1{font-size:24px; margin:0;}
+  .btn{
+    border:0; border-radius:10px; padding:10px 16px; font:inherit; font-weight:600;
+    background:var(--indigo); color:#fff; cursor:pointer; transition:filter .12s ease;
+  }
+  .btn:hover{filter:brightness(1.06);}
+  .btn.ghost{background:#e9eaf6; color:#333ac2;}
+  .btn.sm{padding:7px 12px; font-size:13px;}
+
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;}
+  .stat{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:15px 16px;}
+  .stat .k{color:var(--muted); font-size:12.5px; text-transform:uppercase; letter-spacing:.4px;}
+  .stat .v{font-size:24px; font-weight:750; margin-top:6px;}
+  .stat .d{font-size:12px; margin-top:4px; color:var(--ok);}
+
+  .tabs{display:flex; gap:26px; border-bottom:1px solid var(--line);
+    overflow:auto; white-space:nowrap;}
+  .tabs a{padding:11px 2px; color:var(--muted); font-weight:600;
+    border-bottom:2px solid transparent; transition:color .12s ease;}
+  .tabs a:hover{color:var(--ink);}
+  .tabs a.active{color:var(--indigo); border-bottom-color:var(--indigo);}
+  .tabs .pill{background:#eef0fe; color:#333ac2; border-radius:999px; font-size:12px;
+    padding:1px 8px; margin-left:6px;}
+
+  .panel{background:var(--card); border:1px solid var(--line); border-top:0;
+    border-radius:0 0 14px 14px; padding:18px;}
+  .panel .ph{display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+    flex-wrap:wrap;}
+  .panel .ph h2{margin:0; font-size:17px;}
+  .panel .ph p{margin:3px 0 0; color:var(--muted); font-size:13px;}
+  .tools{display:flex; gap:8px; align-items:center;}
+  .tools input{border:1px solid var(--line); border-radius:9px; padding:8px 11px; font:inherit; width:190px;}
+  .filters{display:flex; gap:10px; margin:14px 0 6px; flex-wrap:wrap;}
+  .filter{border:1px solid var(--line); border-radius:9px; padding:8px 12px; font-size:13px;
+    color:#3a4152; cursor:pointer; transition:border-color .12s ease;}
+  .filter:hover{border-color:var(--indigo);}
+  .filter b{color:var(--muted); font-weight:600;}
+
+  table{width:100%; border-collapse:collapse; margin-top:10px; font-size:13.5px;}
+  th,td{text-align:left; padding:11px 10px; border-bottom:1px solid var(--line);}
+  th{color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.3px;}
+  .tag{border-radius:999px; padding:2px 10px; font-size:12px; font-weight:600;}
+  .tag.done{background:var(--ok-bg); color:var(--ok);}
+  .tag.wait{background:#fff2d6; color:#a15c00;}
+  .tag.prog{background:#e6ecff; color:#333ac2;}
+
+  @media (max-width:760px){ .stats{grid-template-columns:repeat(2,1fr);} }
+</style>
+</head>
+<body>
+
+<div class="pagehead">
+  <h1>Dashboard</h1>
+  <button class="btn">+ Add &#9662;</button>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="k">Today's Appointments</div><div class="v">12</div>
+    <div class="d">&#9650; 3 vs yesterday</div></div>
+  <div class="stat"><div class="k">Patients Seen</div><div class="v">8</div>
+    <div class="d">on track</div></div>
+  <div class="stat"><div class="k">Pending Invoices</div><div class="v">&#8369;4,250</div>
+    <div class="d" style="color:#a15c00">2 overdue</div></div>
+  <div class="stat"><div class="k">New Patients (wk)</div><div class="v">5</div>
+    <div class="d">&#9650; 1</div></div>
+</div>
+
+<div class="tabs">
+  <a class="active">Today's Encounter</a>
+  <a>All Upcoming Appointments <span class="pill">1</span></a>
+  <a>My Upcoming Appointments <span class="pill">1</span></a>
+  <a>All Past Appointments <span class="pill">94</span></a>
+</div>
+
+<div class="panel">
+  <div class="ph">
+    <div>
+      <h2>Today's Encounter</h2>
+      <p>Keep track of encounters and their progress throughout the day</p>
+    </div>
+    <div class="tools">
+      <button class="btn ghost sm">&#8635;</button>
+      <input placeholder="Search patient...">
+      <button class="btn ghost sm">&#9662; Filters</button>
+    </div>
+  </div>
+  <div class="filters">
+    <div class="filter"><b>Practitioner</b> &nbsp;None &#9662;</div>
+    <div class="filter"><b>Encounter Priority</b> &nbsp;None &#9662;</div>
+    <div class="filter"><b>Status</b> &nbsp;None &#9662;</div>
+  </div>
+
+  <table>
+    <thead><tr><th>Patient</th><th>Time</th><th>Practitioner</th>
+      <th>Type</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Maria Santos</td><td>09:00</td><td>Dr. Reyes</td>
+        <td>Follow-up</td><td><span class="tag done">Completed</span></td></tr>
+      <tr><td>Jose Cruz</td><td>09:30</td><td>Dr. Reyes</td>
+        <td>Consultation</td><td><span class="tag prog">In progress</span></td></tr>
+      <tr><td>Ana Lim</td><td>10:15</td><td>Dr. Villanueva</td>
+        <td>Immunization</td><td><span class="tag wait">Waiting</span></td></tr>
+      <tr><td>Pedro Dela Cruz</td><td>11:00</td><td>Dr. Villanueva</td>
+        <td>Consultation</td><td><span class="tag wait">Waiting</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

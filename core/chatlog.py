@@ -12,7 +12,7 @@ Primary store depends on config.DATABASE_URL:
   * unset  -> one JSON object per line in logs/chats.jsonl (the default; fine
              for the Streamlit demo and the tests).
   * set    -> one row per conversation in the `chat_logs` PostgreSQL table
-             (see db.py / db_init.py).
+             (see core/chatlog_db.py). Created automatically on first use.
 Either way the API is the same: `append(record)` / `load_all()`.
 
 Local CSV mirror: every `append()` rewrites config.CHAT_LOG_CSV_PATH
@@ -93,7 +93,7 @@ def append(record: ConversationRecord) -> None:
     """Upsert one conversation record (keyed by `conversation_id`), then refresh
     the local CSV mirror from the primary store."""
     if _use_db():
-        from api import db
+        from core import chatlog_db as db
         db.upsert_chat_log(asdict(record))
     else:
         _file_upsert(record)
@@ -128,7 +128,7 @@ def _dedupe(records: list[ConversationRecord]) -> list[ConversationRecord]:
 
 def load_all() -> list[ConversationRecord]:
     if _use_db():
-        from api import db
+        from core import chatlog_db as db
         return _dedupe([_from_dict(d) for d in db.all_chat_logs()])
     if not config.CHAT_LOG_PATH.exists():
         return []
@@ -144,7 +144,7 @@ def load_all() -> list[ConversationRecord]:
 def reset_store() -> None:
     """Wipe every chat log. Used by `seed_demo_log.py --reset` and the tests."""
     if _use_db():
-        from api import db
+        from core import chatlog_db as db
         db.clear_chat_logs()
     elif config.CHAT_LOG_PATH.exists():
         config.CHAT_LOG_PATH.unlink()

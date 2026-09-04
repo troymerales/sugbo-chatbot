@@ -4,39 +4,27 @@
 !.env.example
 .streamlit/secrets.toml
 *.pem
-*-key.json                 # cloud service-account keys
-# local Claude Code config (project-specific, may hold tokens)
+*-key.json
 .mcp.json
 .claude/settings.local.json
 
-# --- private study material (see study/README.md) ---
-# Everything under study/ is personal learning notes + the cloud lab notebook.
-# GitHub shows the professional project; study/ stays on the local machine only.
+# --- private local notes ---
 study/
-
 chapters.txt
 transcript.txt
+tickets.csv
 
-# full knowledge base + hand-written prompt (private). The committed
+# full knowledge base (private). The committed
 # docs/SugboDoc-Documentation.sample.md excerpt is the fallback (config.DOCS_PATH).
 docs/SugboDoc-Documentation.md
 docs/system-prompt.md
-
-# design reference screenshot (not part of the deliverable)
 docs/homepage-reference.png
 
-# generated at runtime
+# --- generated at runtime ---
 __pycache__/
 *.egg-info/
 .pytest_cache/
-.ipynb_checkpoints/
 *.sqlite
 *.db
+soap_notes.db
 logs/
-doc_proposals/
-evaluation/eval_generated.jsonl
-evaluation/eval_scorecard.json
-tickets.csv
-
-# local docker-compose overrides (machine-specific ports / mounts)
-docker-compose.override.yml

@@ -1,18 +1,11 @@
 name: CI
 
-# What triggers this:
-#   - every push to main        -> test, build the image, and (if green) deploy
-#   - every pull request        -> test + build only (never deploys)
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # 1. Tests — the same offline suite you run locally. No secrets needed:
-  #    mock LLM backend, tmp paths, throwaway SQLite.
-  # ---------------------------------------------------------------------------
   test:
     runs-on: ubuntu-latest
     steps:
@@ -24,50 +17,10 @@ jobs:
           cache: pip
 
       - name: Install
-        run: pip install -r requirements-dev.txt -r requirements-service.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Compile-check
-        run: python -m compileall -q config.py app.py streamlit_app.py core api assistant evaluation analytics scripts tests
+        run: python -m compileall -q config.py streamlit_app.py home.py shell.py stt_ui.py core assistant stt pages tests
 
       - name: Test
         run: pytest
-
-  # ---------------------------------------------------------------------------
-  # 2. Docker build — catches a broken Dockerfile / missing dependency BEFORE
-  #    a deploy. Build only: nothing is pushed anywhere.
-  # ---------------------------------------------------------------------------
-  docker-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t sugbodoc:ci .
-
-  # ---------------------------------------------------------------------------
-  # 3. Deploy — only after BOTH jobs above pass, and only on a push to main
-  #    (never on a pull request). It pings Render's deploy hook, a secret URL
-  #    that tells Render "pull main and redeploy". The actual build happens on
-  #    Render's servers from the Dockerfile; the image never leaves GitHub here.
-  #
-  #    Secret: RENDER_DEPLOY_HOOK_URL  (Settings -> Secrets and variables ->
-  #    Actions). If it is missing, this step is skipped, not failed.
-  #
-  #    If the curl fails (bad hook, Render down) the job goes red and you get an
-  #    email; the currently-running Render revision keeps serving.
-  # ---------------------------------------------------------------------------
-  deploy:
-    needs: [test, docker-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Render deploy
-        env:
-          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-        run: |
-          if [ -z "$HOOK" ]; then
-            echo "RENDER_DEPLOY_HOOK_URL not set — skipping deploy."
-            exit 0
-          fi
-          echo "Pinging Render deploy hook…"
-          curl -fsS "$HOOK"
-          echo "Deploy triggered. Watch progress in the Render dashboard."

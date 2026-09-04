@@ -1,5 +1,3 @@
 # dev / test only
 -r requirements.txt
 pytest>=8.0
-httpx>=0.27          # FastAPI TestClient (tests/test_service.py)
-# SQLAlchemy + psycopg now come from requirements.txt (chat-log persistence).
