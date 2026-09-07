@@ -11,7 +11,9 @@ path unchanged.
 evaluation/
 ├── jira_backtest.ipynb        the experiment (run this)
 ├── backtest.py                reusable engine — loading, running, evaluating, metrics, plots
-├── dashboard.py               read-only Streamlit dashboard over the saved results
+├── dashboard_mock.py          read-only Streamlit dashboard — the deployable demo (simulated data)
+├── mock_results/              committed synthetic results the demo dashboard reads
+├── FINDINGS.md                result & limitations write-up
 ├── data/
 │   ├── jira_tickets.sample.csv committed synthetic sample (so the notebook runs on a clone)
 │   └── jira_tickets.csv        <- your real export goes here (git-ignored)
@@ -28,18 +30,31 @@ evaluation/
 ```bash
 pip install -r requirements.txt -r requirements-eval.txt
 jupyter notebook evaluation/jira_backtest.ipynb        # run the backtest
-streamlit run evaluation/dashboard.py                  # explore the results
+streamlit run evaluation/dashboard_mock.py             # the demo dashboard (simulated data)
 ```
 
 ## Dashboard
 
-`evaluation/dashboard.py` is a **read-only** view over `evaluation/results/` — it never runs
-the backtest and **makes zero model calls**. Sections: KPI cards, classification breakdown,
-rule-based reason analysis (reuses `backtest.FAILURE_PATTERNS`), a ticket explorer with
-per-ticket detail, failure-mode slices, and human-vs-LLM agreement from
-`manual_review_sample.csv`. It computes a transparent lexical doc-overlap signal on load
-(no LLM) since production runs full-context with no retrieval record. Handles missing
-files, empty data, malformed JSON, and evaluator-fallback rows with clear messages.
+`evaluation/dashboard_mock.py` is a **read-only** Streamlit view — it never runs the
+backtest and **makes zero model calls**. This repo ships it against a fully **simulated**
+results set (`evaluation/mock_results/`, committed) so it can be deployed publicly without
+exposing real ticket data; the hero carries a disclosure and states the real historical
+result (6.1% across 33 tickets). To view your own private `evaluation/results/` locally,
+create `evaluation/dashboard_real.py` (git-ignored) — a 3-line wrapper:
+
+```python
+from evaluation import dashboard_mock as d
+from pathlib import Path
+d.RESULTS_DIR = Path(__file__).resolve().parent / "results"
+d.DEMO_NOTICE = []
+d.main()
+```
+
+Sections: KPI cards + a one-screen TL;DR, classification breakdown, rule-based reason
+analysis (reuses `backtest.FAILURE_PATTERNS`), a ticket explorer with per-ticket detail,
+failure-mode slices incl. **likely misses**, an **end-to-end example trace**, and
+human-vs-LLM agreement from `manual_review_sample.csv`. Handles missing files, empty data,
+malformed JSON and evaluator-fallback rows with clear messages.
 
 Rehearse the whole flow for free first: in Section 2 set `os.environ["LLM_BACKEND"]="mock"`
 before the imports. (The mock backend cannot act as the evaluator, so every ticket comes

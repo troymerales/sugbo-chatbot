@@ -25,6 +25,8 @@ evaluation/data/jira_tickets*.csv
 !evaluation/data/jira_tickets.sample.csv
 evaluation/results/*
 !evaluation/results/.gitkeep
+# private local dashboard pointed at the real results (public repo ships the demo only)
+evaluation/dashboard_real.py
 
 # --- generated at runtime ---
 .ipynb_checkpoints/

@@ -1,20 +1,20 @@
 {
   "total_tickets": 30,
-  "full": 9,
+  "full": 10,
   "partial": 10,
-  "human": 11,
-  "potential_deflection_rate": 0.3,
+  "human": 10,
+  "potential_deflection_rate": 0.3333,
   "partial_assistance_rate": 0.3333,
-  "human_required_rate": 0.3667,
-  "evaluator_fallback_count": 2,
-  "chatbot_error_count": 1,
+  "human_required_rate": 0.3333,
+  "evaluator_fallback_count": 0,
+  "chatbot_error_count": 0,
   "est_chatbot_calls": 60,
   "est_evaluator_calls": 2,
   "latency_s_p50": 2.8,
   "latency_s_p95": 4.6,
   "latency_s_mean": 3.1,
   "chatbot_wall_time_s": 93.0,
-  "likely_miss_count": 9,
+  "likely_miss_count": 8,
   "historical_resolved_true": 22,
   "historical_resolved_false": 8,
   "run": {
@@ -36,5 +36,5 @@
     "prod_refusal_marker": "I don't have enough information in my records to answer that",
     "note": "SIMULATED dataset for the public demo \u2014 not a real backtest run."
   },
-  "generated_at": "2026-09-07T07:29:48+00:00"
+  "generated_at": "2026-09-07T07:49:26+00:00"
 }

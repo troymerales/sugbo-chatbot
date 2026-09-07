@@ -7,7 +7,7 @@ reads. No real Jira data, no LLM calls.
 Source: evaluation/data/jira_tickets.sample.csv (committed synthetic sample).
 Classifications / responses / reasons are fabricated by simple rules to give the
 demo a believable, slightly messy spread that exercises every panel:
-evaluator fallbacks, likely-misses, and a few human-vs-LLM disagreements.
+likely-misses and a few human-vs-LLM disagreements.
 """
 
 from __future__ import annotations
@@ -61,18 +61,11 @@ rows = []
 for i, r in enumerate(src.itertuples(index=False)):
     cls = classify(i, r.summary)
     topic = r.summary.split(":")[0][:44]
-    fallback = i in (5, 19)                       # two demo evaluator fallbacks
-    if fallback:
-        cls = "HUMAN"
     refused = cls == "HUMAN"
-    resp = "" if fallback and i == 5 else (
-        FULL_RESP.format(topic=topic) if cls == "FULL"
-        else PARTIAL_RESP.format(topic=topic) if cls == "PARTIAL"
-        else REFUSAL)
-    reason = ("No chatbot response was produced for this ticket." if (fallback and i == 5)
-              else "Evaluator did not return a valid classification after 2 attempts; "
-                   "defaulted to HUMAN (conservative)." if fallback
-              else REASONS[cls])
+    resp = (FULL_RESP.format(topic=topic) if cls == "FULL"
+            else PARTIAL_RESP.format(topic=topic) if cls == "PARTIAL"
+            else REFUSAL)
+    reason = REASONS[cls]
     rows.append({
         "ticket_id": r.ticket_id,
         "summary": r.summary,
@@ -89,11 +82,11 @@ for i, r in enumerate(src.itertuples(index=False)):
         "grounding_reason": "assistant refused, which is allowed" if refused
                             else "draft answer reflects the documentation",
         "chatbot_model": "gemini-3.1-flash-lite",
-        "chatbot_error": "TimeoutError: demo" if (fallback and i == 5) else "",
+        "chatbot_error": "",
         "latency_s": round(1.0 + (i % 7) * 0.6 + (12.0 if i == 11 else 0.0), 2),
         "answered_at": now,
         "evaluator_model": "gemini-flash-latest",
-        "evaluator_fallback": fallback,
+        "evaluator_fallback": False,
         "summary_length": len(r.summary),
     })
 
@@ -141,6 +134,7 @@ metrics = {
 (OUT / "summary_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
 
 # --- manual review sample: 12 rows, 10 human-labelled, 2 disagreements ------- #
+# (this is the one section the demo intentionally shows populated — item 7)
 sample = df.sample(n=12, random_state=7).reset_index(drop=True)
 man = pd.DataFrame({
     "ticket_id": sample["ticket_id"], "summary": sample["summary"],
