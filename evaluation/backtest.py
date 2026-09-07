@@ -248,13 +248,20 @@ def chatbot_input(row: pd.Series) -> str:
 # 2. Run the production chatbot over one ticket
 # --------------------------------------------------------------------------- #
 
-def run_chatbot(summary: str) -> dict:
+def run_chatbot(summary: str, *, verify: bool | None = None) -> dict:
     """Send one historical ticket summary through the real chatbot pipeline.
 
     A fresh single-turn `Chat` per ticket — the same object the widget builds for
     a new conversation. Returns a plain dict (CSV/JSON friendly).
+
+    `verify` temporarily overrides `config.VERIFY_ANSWERS` for this one call — only
+    used by the verification-pass ablation (`run_backtest(..., verify_answers=...)`).
+    Leave it `None` to match production.
     """
     started = time.time()
+    _verify_saved = config.VERIFY_ANSWERS
+    if verify is not None:
+        config.VERIFY_ANSWERS = verify
     try:
         chat = bot.fresh_chat()
         result = bot.respond(chat, summary)
@@ -281,6 +288,8 @@ def run_chatbot(summary: str) -> dict:
             "chatbot_error": f"{type(exc).__name__}: {exc}",
             "latency_s": round(time.time() - started, 2),
         }
+    finally:
+        config.VERIFY_ANSWERS = _verify_saved
 
 
 # --------------------------------------------------------------------------- #
@@ -555,11 +564,16 @@ def run_backtest(
     cfg: BacktestConfig,
     *,
     responses_path: Path | None = None,
+    verify_answers: bool | None = None,
     progress: Callable[[str], None] = print,
 ) -> pd.DataFrame:
     """Phase 1: chatbot responses for every ticket not already done.
 
     Safe to interrupt and re-run. Returns the full responses frame from disk.
+
+    `verify_answers` overrides `config.VERIFY_ANSWERS` for the whole run — for the
+    ablation only. Point `responses_path` at a separate file (e.g.
+    ``chatbot_responses_noverify.csv``) so it doesn't mix with the production run.
     """
     responses_path = responses_path or (RESULTS_DIR / "chatbot_responses.csv")
     done = _load_done_ids(responses_path)
@@ -578,7 +592,7 @@ def run_backtest(
     processed = 0
     try:
         for bi, batch in enumerate(_batches(rows_iter, cfg.batch_size), start=1):
-            batch_rows = _run_chatbot_batch(batch, cols, cfg)
+            batch_rows = _run_chatbot_batch(batch, cols, cfg, verify_answers)
             _append_rows(responses_path, batch_rows)
             processed += len(batch_rows)
             progress(f"[backtest] batch {bi}: +{len(batch_rows)} (total {len(done) + processed})")
@@ -596,10 +610,11 @@ def run_backtest(
     return out
 
 
-def _run_chatbot_batch(batch: list, cols: list[str], cfg: BacktestConfig) -> list[dict]:
+def _run_chatbot_batch(batch: list, cols: list[str], cfg: BacktestConfig,
+                       verify_answers: bool | None = None) -> list[dict]:
     def one(rec) -> dict:
         row = pd.Series(rec, index=cols)
-        out = run_chatbot(chatbot_input(row))
+        out = run_chatbot(chatbot_input(row), verify=verify_answers)
         out.update(
             ticket_id=row["ticket_id"],
             summary=row["summary"],
@@ -671,12 +686,73 @@ def run_evaluation(
 # 5. Merge + metrics
 # --------------------------------------------------------------------------- #
 
+_DOC_STOP = set(
+    "a an the to i want so that of in on for with my our as be can could would how do "
+    "does is are was were and or at it this these those also able more new not".split()
+)
+
+
+def _doc_tokens(s: str) -> set[str]:
+    import re
+
+    return {w for w in re.findall(r"[a-z]+", str(s).lower())
+            if w not in _DOC_STOP and len(w) > 2}
+
+
+def doc_overlap_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Rule-based, **no-LLM** proxy for 'how close is this ticket to anything
+    documented': token overlap between each ticket summary and every KB section.
+
+    NOT the chatbot's retrieval (production runs full-context). It's a transparent
+    signal for the failure analysis and the `likely_misses` check. Returns
+    `ticket_id, doc_overlap (0..1), nearest_doc_sections`.
+    """
+    from core import knowledge
+
+    secs = [(s.title, _doc_tokens(s.title + " " + s.body))
+            for s in knowledge.content_sections()]
+    rows = []
+    for r in frame.itertuples(index=False):
+        q = _doc_tokens(getattr(r, "summary", ""))
+        scored = sorted(((len(q & t) / len(q) if q else 0.0, title)
+                         for title, t in secs), reverse=True)
+        rows.append({
+            "ticket_id": r.ticket_id,
+            "doc_overlap": round(scored[0][0], 3) if scored else 0.0,
+            "nearest_doc_sections": "; ".join(
+                f"{title} ({v:.0%})" for v, title in scored[:3] if v > 0
+            ) or "(no section overlaps)",
+        })
+    return pd.DataFrame(rows)
+
+
+def likely_misses(results: pd.DataFrame, *, min_overlap: float = 0.25) -> pd.DataFrame:
+    """Refused tickets whose summary has high lexical overlap with the docs — the
+    documentation may well cover these, so the refusal is a candidate *miss*
+    (retrieval / prompt problem), not an appropriate decline. Actionable output.
+    """
+    if "doc_overlap" not in results.columns or "chatbot_refused" not in results.columns:
+        return pd.DataFrame()
+    refused = _truthy(results["chatbot_refused"])
+    hit = pd.to_numeric(results["doc_overlap"], errors="coerce").fillna(0) >= min_overlap
+    cols = [c for c in ("ticket_id", "classification", "doc_overlap",
+                        "nearest_doc_sections", "summary") if c in results.columns]
+    return (results[refused & hit][cols]
+            .sort_values("doc_overlap", ascending=False).reset_index(drop=True))
+
+
 def build_results(
     tickets: pd.DataFrame,
     responses: pd.DataFrame,
     evaluations: pd.DataFrame,
+    *,
+    add_doc_overlap: bool = False,
 ) -> pd.DataFrame:
-    """One row per evaluated ticket: ticket metadata + response + classification."""
+    """One row per evaluated ticket: ticket metadata + response + classification.
+
+    `add_doc_overlap` also merges the rule-based `doc_overlap` /
+    `nearest_doc_sections` columns (no LLM — see `doc_overlap_frame`).
+    """
     keep_tickets = [c for c in tickets.columns if c not in ("summary",)]
     merged = (
         tickets[keep_tickets]
@@ -689,7 +765,31 @@ def build_results(
     if "historical_resolved" in merged.columns:
         merged["historical_resolved"] = merged["historical_resolved"].map(_coerce_bool)
     merged["summary_length"] = merged["summary"].str.len().astype(int)
+    if add_doc_overlap and "summary" in merged.columns:
+        try:
+            ov = doc_overlap_frame(merged[["ticket_id", "summary"]])
+            merged = merged.merge(ov, on="ticket_id", how="left")
+        except Exception:  # noqa: BLE001 — enrichment is best-effort
+            pass
     return merged
+
+
+def compare_verification(with_verify: pd.DataFrame,
+                         without_verify: pd.DataFrame) -> pd.DataFrame:
+    """Side-by-side of the two ablation runs (VERIFY_ANSWERS on vs off), keyed by
+    ticket_id. Shows where the verification pass changed a drafted answer into a
+    refusal — and lets you judge whether those were real hallucinations or
+    over-caution.
+    """
+    a = with_verify[["ticket_id", "chatbot_refused", "chatbot_response"]].rename(
+        columns={"chatbot_refused": "refused_verify_on", "chatbot_response": "resp_verify_on"})
+    b = without_verify[["ticket_id", "chatbot_refused", "chatbot_response"]].rename(
+        columns={"chatbot_refused": "refused_verify_off", "chatbot_response": "resp_verify_off"})
+    m = a.merge(b, on="ticket_id", how="inner")
+    m["downgraded_by_verify"] = (
+        _truthy(m["refused_verify_on"]) & ~_truthy(m["refused_verify_off"])
+    )
+    return m
 
 
 def _truthy(series: pd.Series) -> pd.Series:
@@ -724,6 +824,25 @@ def calculate_metrics(results: pd.DataFrame, cfg: BacktestConfig | None = None) 
             _nonblank(results.get("chatbot_error", pd.Series(dtype=str))).sum()
         ),
     }
+
+    # --- cost + latency, reported as first-class results -------------------- #
+    verify_on = bool(cfg and cfg.as_dict().get("prod_verify_answers", True))
+    eval_bs = int(cfg.eval_batch_size) if cfg else 15
+    metrics["est_chatbot_calls"] = total * (2 if verify_on else 1)
+    metrics["est_evaluator_calls"] = -(-total // max(eval_bs, 1)) if total else 0
+    lat = pd.to_numeric(results.get("latency_s", pd.Series(dtype=float)), errors="coerce").dropna()
+    if len(lat):
+        metrics["latency_s_p50"] = round(float(lat.quantile(0.50)), 2)
+        metrics["latency_s_p95"] = round(float(lat.quantile(0.95)), 2)
+        metrics["latency_s_mean"] = round(float(lat.mean()), 2)
+        metrics["chatbot_wall_time_s"] = round(float(lat.sum()), 1)
+
+    # --- likely misses: refused, but the docs seem to cover it ------------- #
+    lm = likely_misses(results)
+    metrics["likely_miss_count"] = int(len(lm))
+    if len(lm):
+        metrics["likely_miss_ticket_ids"] = [str(x) for x in lm["ticket_id"].tolist()]
+
     if "historical_resolved" in results.columns:
         metrics["historical_resolved_true"] = int(results["historical_resolved"].eq(True).sum())
         metrics["historical_resolved_false"] = int(results["historical_resolved"].eq(False).sum())

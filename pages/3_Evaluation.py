@@ -43,7 +43,9 @@ setup.write(f"**{len(clips)}** reference clips "
             f"{sum(c.kind == 'narration' for c in clips)} narration).")
 
 with setup:
-    col1, col2, col3 = st.columns(3)
+    # the multiselect needs more room than the two checkboxes, otherwise it sits
+    # in a third of the width with a large gap before the first checkbox.
+    col1, col2, col3 = st.columns([1.5, 1, 1], vertical_alignment="center")
 kinds = col1.multiselect("Clip types", ["dialogue", "narration"], default=["dialogue", "narration"])
 run_soap = col2.checkbox("Also generate SOAP notes", value=False,
                          disabled=not settings.llm_available)

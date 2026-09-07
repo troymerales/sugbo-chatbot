@@ -581,6 +581,12 @@ html, body, [class*="css"]{
   border:1px solid var(--sd-line); border-radius:var(--sd-r); overflow:hidden;
   box-shadow:var(--sd-shadow);
 }
+/* A table already sitting inside a panel is a sub-element, not a second card:
+   drop the lift and match the panel's inner radius so it doesn't read as
+   card-in-card (Past Notes browse list, Evaluation results). */
+[class*="st-key-sdpanel"] [data-testid="stDataFrame"]{
+  border-radius:var(--sd-r-sm); box-shadow:none;
+}
 [data-testid="stMain"] [data-testid="stProgress"] > div > div > div > div{
   background:var(--sd-indigo);
 }

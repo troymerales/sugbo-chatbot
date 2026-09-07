@@ -24,7 +24,9 @@ _BODY = config.ROOT / "web" / "dashboard.html"
 render_shell("dashboard")
 
 try:
-    components.html(_BODY.read_text(encoding="utf-8"), height=700, scrolling=True)
+    # height tracks the fragment's own content (~620px at desktop widths) with a
+    # small buffer, rather than leaving ~80px of dead space below the table.
+    components.html(_BODY.read_text(encoding="utf-8"), height=650, scrolling=True)
 except OSError:
     st.error("`web/dashboard.html` not found.")
 

@@ -1,0 +1,33 @@
+ticket_id,summary,chatbot_response,llm_evaluation,llm_reason,human_evaluation,human_reason,judge_correct
+JIRA-0003,Where do I set a practitioner's weekly schedule?,"The documentation covers this area under **Where do I set a practitioner's weekly sched**, but not the exact option you describe. Here is the closest documented procedure… [demo response]",PARTIAL,"On-topic and partially helpful, but a staff member would still need to confirm or finish it.",PARTIAL,Agrees with the automated label.,
+JIRA-0018,Where do I configure clinic rooms and resources?,"From the **Where do I configure clinic rooms and resour** section of the documentation:
+
+1. Open the module from the sidebar.
+2. Choose **Add / Edit** and fill in the fields.
+3. Save — the change applies immediately. [demo response]",FULL,The reply gives the documented steps and needs no staff action.,FULL,Agrees with the automated label.,
+JIRA-0002,Steps to book an appointment for an existing patient,"From the **Steps to book an appointment for an existing** section of the documentation:
+
+1. Open the module from the sidebar.
+2. Choose **Add / Edit** and fill in the fields.
+3. Save — the change applies immediately. [demo response]",FULL,The reply gives the documented steps and needs no staff action.,FULL,Agrees with the automated label.,
+JIRA-0010,How do I search for a patient by phone number?,"From the **How do I search for a patient by phone numbe** section of the documentation:
+
+1. Open the module from the sidebar.
+2. Choose **Add / Edit** and fill in the fields.
+3. Save — the change applies immediately. [demo response]",FULL,The reply gives the documented steps and needs no staff action.,PARTIAL,Reviewer judged this needs more human involvement than the model did.,
+JIRA-0012,How to log an immunization / vaccine dose,"From the **How to log an immunization / vaccine dose** section of the documentation:
+
+1. Open the module from the sidebar.
+2. Choose **Add / Edit** and fill in the fields.
+3. Save — the change applies immediately. [demo response]",FULL,The reply gives the documented steps and needs no staff action.,FULL,Agrees with the automated label.,
+JIRA-0006,How do I record a patient's vital signs?,,HUMAN,No chatbot response was produced for this ticket.,HUMAN,Agrees with the automated label.,
+JIRA-0019,How do I add a second clinic location under our subscription?,"The documentation covers this area under **How do I add a second clinic location under **, but not the exact option you describe. Here is the closest documented procedure… [demo response]",PARTIAL,"On-topic and partially helpful, but a staff member would still need to confirm or finish it.",PARTIAL,Agrees with the automated label.,
+JIRA-0025,How to create a service request / referral for lab work,"The documentation covers this area under **How to create a service request / referral f**, but not the exact option you describe. Here is the closest documented procedure… [demo response]",PARTIAL,"On-topic and partially helpful, but a staff member would still need to confirm or finish it.",PARTIAL,Agrees with the automated label.,
+JIRA-0028,Merge two duplicate patient profiles into one,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,"Needs privileged access, a manual change, investigation or a decision — or the reply is a refusal.",PARTIAL,Reviewer judged this needs more human involvement than the model did.,
+JIRA-0030,Prescription PDF prints with the wrong clinic address in the header,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,"Needs privileged access, a manual change, investigation or a decision — or the reply is a refusal.",HUMAN,Agrees with the automated label.,
+JIRA-0013,Steps to issue a patient bill after a consultation,"The documentation covers this area under **Steps to issue a patient bill after a consul**, but not the exact option you describe. Here is the closest documented procedure… [demo response]",PARTIAL,"On-topic and partially helpful, but a staff member would still need to confirm or finish it.",,,
+JIRA-0014,How do I record a deposit or advance payment from a patient?,"From the **How do I record a deposit or advance payment** section of the documentation:
+
+1. Open the module from the sidebar.
+2. Choose **Add / Edit** and fill in the fields.
+3. Save — the change applies immediately. [demo response]",FULL,The reply gives the documented steps and needs no staff action.,,,

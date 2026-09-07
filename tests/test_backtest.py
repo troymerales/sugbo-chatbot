@@ -178,6 +178,54 @@ def test_analysis_helpers(tmp_path, tickets):
     assert -1.0 <= agr["cohens_kappa"] <= 1.0
 
 
+def test_doc_overlap_and_likely_misses():
+    frame = pd.DataFrame({
+        "ticket_id": ["a", "b"],
+        "summary": ["How do I create a prescription?", "asdfghjkl zxcvb qwerty"],
+    })
+    ov = bt.doc_overlap_frame(frame)
+    assert set(ov.columns) == {"ticket_id", "doc_overlap", "nearest_doc_sections"}
+    assert ov.set_index("ticket_id").loc["a", "doc_overlap"] > \
+        ov.set_index("ticket_id").loc["b", "doc_overlap"]
+
+    results = pd.DataFrame({
+        "ticket_id": ["a", "b", "c"],
+        "classification": ["HUMAN", "HUMAN", "FULL"],
+        "chatbot_refused": [True, True, False],
+        "doc_overlap": [0.4, 0.01, 0.9],
+        "nearest_doc_sections": ["X (40%)", "(none)", "Y (90%)"],
+        "summary": ["s", "s", "s"],
+    })
+    lm = bt.likely_misses(results, min_overlap=0.25)
+    assert list(lm["ticket_id"]) == ["a"]          # refused + high overlap only
+
+
+def test_metrics_report_cost_and_latency():
+    results = pd.DataFrame({
+        "classification": ["FULL", "HUMAN", "HUMAN"],
+        "latency_s": [2.0, 4.0, 30.0],
+        "chatbot_refused": [False, True, True],
+        "evaluator_fallback": [False, False, False],
+        "chatbot_error": ["", "", ""],
+    })
+    cfg = bt.BacktestConfig(run_id="t", eval_batch_size=15)
+    m = bt.calculate_metrics(results, cfg)
+    assert m["est_chatbot_calls"] == 6            # 3 tickets * 2 (verify on)
+    assert m["est_evaluator_calls"] == 1
+    assert m["latency_s_p50"] == 4.0
+    assert m["likely_miss_count"] == 0            # no doc_overlap column
+
+
+def test_run_backtest_verify_override(tmp_path):
+    import config as cfgmod
+    t = pd.DataFrame({"ticket_id": ["V1"], "summary": ["How do I add a patient?"]})
+    cfg = bt.BacktestConfig(run_id="v", batch_size=1)
+    before = cfgmod.VERIFY_ANSWERS
+    bt.run_backtest(t, cfg, responses_path=tmp_path / "r.csv",
+                    verify_answers=False, progress=lambda *_: None)
+    assert cfgmod.VERIFY_ANSWERS == before        # restored after the run
+
+
 def test_failure_patterns_separate_from_primary(tmp_path):
     results = pd.DataFrame({
         "ticket_id": ["a", "b"],
