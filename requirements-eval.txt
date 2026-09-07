@@ -1,0 +1,14 @@
+# Historical backtesting notebook (evaluation/jira_backtest.ipynb).
+# Install on top of requirements.txt:  pip install -r requirements.txt -r requirements-eval.txt
+#
+# The chatbot itself needs nothing extra — the backtest reuses core/ as-is.
+# These are only for the notebook (charts + Jupyter) and the results dashboard.
+pandas>=2.0          # already in requirements.txt; repeated so this file stands alone
+streamlit>=1.37      # already in requirements.txt; evaluation/dashboard.py needs it
+matplotlib>=3.7
+seaborn>=0.13
+jupyter>=1.0
+nbformat>=5.9
+nbconvert>=7.0
+ipykernel>=6.0
+# altair ships with streamlit — used by evaluation/dashboard.py for the class chart

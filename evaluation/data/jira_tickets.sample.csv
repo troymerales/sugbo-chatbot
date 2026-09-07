@@ -1,0 +1,61 @@
+ticket_id,created_at,summary,issue_type,priority,resolved
+JIRA-0001,2025-11-02,How do I add a new patient profile in SugboDoc?,Service Request,Low,True
+JIRA-0002,2025-11-02,Steps to book an appointment for an existing patient,Service Request,Low,True
+JIRA-0003,2025-11-03,Where do I set a practitioner's weekly schedule?,Service Request,Low,True
+JIRA-0004,2025-11-03,How to write a SOAP note during an encounter,Service Request,Medium,True
+JIRA-0005,2025-11-04,Cannot save a SOAP note - Save button greys out and nothing happens,Bug,High,False
+JIRA-0006,2025-11-04,How do I record a patient's vital signs?,Service Request,Low,True
+JIRA-0007,2025-11-05,Need to reset my password - locked out of my account,Access,High,True
+JIRA-0008,2025-11-05,How to create a prescription for a patient,Service Request,Medium,True
+JIRA-0009,2025-11-06,Add a new staff account for a nurse who just joined,Access,Medium,False
+JIRA-0010,2025-11-06,How do I search for a patient by phone number?,Service Request,Low,True
+JIRA-0011,2025-11-07,Immunization record not showing on the patient timeline after saving,Bug,Medium,False
+JIRA-0012,2025-11-07,How to log an immunization / vaccine dose,Service Request,Low,True
+JIRA-0013,2025-11-08,Steps to issue a patient bill after a consultation,Service Request,Medium,True
+JIRA-0014,2025-11-08,How do I record a deposit or advance payment from a patient?,Service Request,Low,True
+JIRA-0015,2025-11-09,Void a payment that was entered with the wrong amount,Service Request,Medium,True
+JIRA-0016,2025-11-09,Patient billing total is wrong - shows double the service price,Bug,High,False
+JIRA-0017,2025-11-10,How to add a new department to our facility,Service Request,Low,True
+JIRA-0018,2025-11-10,Where do I configure clinic rooms and resources?,Service Request,Low,True
+JIRA-0019,2025-11-11,How do I add a second clinic location under our subscription?,Service Request,Medium,True
+JIRA-0020,2025-11-11,Our subscription expired and all users are locked out - urgent,Billing,High,False
+JIRA-0021,2025-11-12,How to reschedule an existing appointment to another day,Service Request,Low,True
+JIRA-0022,2025-11-12,Cancel an appointment and notify the patient,Service Request,Low,True
+JIRA-0023,2025-11-13,How do I mark a patient as a no-show?,Service Request,Low,True
+JIRA-0024,2025-11-13,Calendar is not loading - infinite spinner on the Appointments page,Bug,High,False
+JIRA-0025,2025-11-14,How to create a service request / referral for lab work,Service Request,Medium,True
+JIRA-0026,2025-11-14,Where do I view a patient's past encounters and notes?,Service Request,Low,True
+JIRA-0027,2025-11-15,How do I edit a patient's demographic details after creation?,Service Request,Low,True
+JIRA-0028,2025-11-15,Merge two duplicate patient profiles into one,Service Request,Medium,False
+JIRA-0029,2025-11-16,How to add a diagnosis (ICD code) to an encounter,Service Request,Medium,True
+JIRA-0030,2025-11-16,Prescription PDF prints with the wrong clinic address in the header,Bug,Medium,False
+JIRA-0031,2025-11-17,How do I set up recurring appointments for a patient?,Service Request,Medium,True
+JIRA-0032,2025-11-17,Can SugboDoc send SMS reminders to patients? How do I enable it?,Service Request,Low,True
+JIRA-0033,2025-11-18,API access - we want to pull appointment data into our own dashboard,Integration,Medium,False
+JIRA-0034,2025-11-18,Does SugboDoc have a mobile app for Android?,Question,Low,True
+JIRA-0035,2025-11-19,How to configure billing items and their default prices,Service Request,Low,True
+JIRA-0036,2025-11-19,Refund a patient deposit that is no longer needed,Service Request,Medium,True
+JIRA-0037,2025-11-20,Report needed: total revenue per practitioner for last month,Service Request,Medium,False
+JIRA-0038,2025-11-20,How do I give a staff member permission to manage schedules only?,Access,Medium,True
+JIRA-0039,2025-11-21,Login page returns a 500 error for all users since this morning,Incident,Highest,False
+JIRA-0040,2025-11-21,How to record patient allergies,Service Request,Low,True
+JIRA-0041,2025-11-22,Where is the setting to change our clinic's operating hours?,Service Request,Low,True
+JIRA-0042,2025-11-22,How do I deactivate a staff account for someone who left?,Access,Medium,True
+JIRA-0043,2025-11-23,Patient cannot be found in search even though the profile exists,Bug,Medium,False
+JIRA-0044,2025-11-23,How to attach a file or lab result to a patient record,Service Request,Low,True
+JIRA-0045,2025-11-24,Change the currency shown on patient bills,Service Request,Low,False
+JIRA-0046,2025-11-24,How do I print or export a patient's SOAP note?,Service Request,Low,True
+JIRA-0047,2025-11-25,Two practitioners were double-booked into the same room - how to prevent this,Service Request,Medium,False
+JIRA-0048,2025-11-25,How to add a new immunization type to the vaccine list,Service Request,Low,True
+JIRA-0049,2025-11-26,Data migration: import 3000 existing patients from our old system,Service Request,High,False
+JIRA-0050,2025-11-26,How do I record a partial payment against an outstanding bill?,Service Request,Low,True
+JIRA-0051,2025-11-27,The system logged me out in the middle of writing a note and I lost everything,Bug,High,False
+JIRA-0052,2025-11-27,How to view outstanding balances across all patients,Service Request,Medium,True
+JIRA-0053,2025-11-28,Set up a new practitioner profile and link them to a department,Service Request,Medium,True
+JIRA-0054,2025-11-28,How do I change which staff can see billing information?,Access,Medium,True
+JIRA-0055,2025-11-29,Appointment confirmation email is going to spam for patients,Bug,Low,False
+JIRA-0056,2025-11-29,How to create an encounter without a scheduled appointment (walk-in),Service Request,Low,True
+JIRA-0057,2025-11-30,Is our patient data HIPAA compliant and where is it hosted?,Question,Medium,False
+JIRA-0058,2025-11-30,How do I add notes to a prescription for the pharmacist?,Service Request,Low,True
+JIRA-0059,2025-12-01,Bulk-cancel all appointments for a practitioner who is on sick leave,Service Request,Medium,False
+JIRA-0060,2025-12-01,How to see a patient's full immunization history,Service Request,Low,True

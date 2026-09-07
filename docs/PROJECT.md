@@ -372,9 +372,15 @@ stt.extract.extract_clinical_facts → stt.review.review_soap_note → stt.notes
   measures ~160 ms and keeps state. `st.page_link` is the obvious alternative but
   raises `KeyError: 'url_pathname'` when a page runs outside `st.navigation` — which
   is exactly how the AppTest suite runs them.
-- **`stt_ui.py`** — `llm_guard` (quota/missing-key → clean message), `editable_soap`,
+- **`stt_ui.py`** — `llm_guard` (quota/missing-key → clean message), `editable_soap`
+  (the S/O/A/P sections as a keyed 2×2 grid, accent-striped by `shell.py`),
   `render_{extract,review}`.
-- **`pages/1_Consultation_Transcript.py`** — the New Note workflow. `pages/2_Past_Notes.py`
+- **`pages/1_Consultation_Transcript.py`** — the New Note workflow, laid out as the
+  workflow reads: a narrow centred **recording card** (the `st.audio_input` mic is
+  the big primary control; upload is a one-line link under it) is the focus until a
+  transcript exists, then it collapses to a one-line summary and the wider
+  **transcript** + **SOAP** cards take over. A stepper (Record → Transcribe →
+  Document) tracks progress. `pages/2_Past_Notes.py`
   — browse / edit / re-run / export / delete. `pages/3_Evaluation.py` — the batch scorer.
   Each page: `load_secrets()` → `render_shell(...)` → page body → `render_floating_assistant()`.
 

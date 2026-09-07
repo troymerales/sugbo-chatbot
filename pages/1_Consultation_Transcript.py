@@ -1,10 +1,14 @@
 """
 Consultation Transcript — Bisaya/Cebuano speech → SOAP note.
 
-Upload or record a consult, transcribe it (fine-tuned Whisper via the HF
+Record or upload a consult, transcribe it (fine-tuned Whisper via the HF
 Inference API), draft an English SOAP note via Gemini, optionally extract
 structured clinical data and run a grounding review, then save to the notes
 database. Every field is editable before saving.
+
+Layout follows the workflow: a narrow, centred recording card is the focal
+point; once a transcript exists it collapses to a one-line summary and the
+transcript + SOAP workspaces take over at a wider reading width.
 """
 
 from __future__ import annotations
@@ -30,12 +34,6 @@ db.init_db()
 settings = get_settings()
 render_shell("consultation-transcript")
 
-st.title("🎙️ Consultation Transcript")
-st.caption(
-    "Transcribe a Bisaya/Cebuano consult, then draft an English SOAP note. "
-    "Everything is editable before you save."
-)
-
 if "work" not in st.session_state:
     st.session_state.work = {
         "transcript": "", "soap": SoapNote().as_sections(), "extract": {}, "review": {},
@@ -43,80 +41,155 @@ if "work" not in st.session_state:
     }
 work = st.session_state.work
 
+has_transcript = bool(work["transcript"].strip())
+has_soap = any(v.strip() for v in work["soap"].values())
+step = 3 if has_soap else (2 if has_transcript else 1)
 
-# ---------------------------------------------------------------- 1. audio ---
-with panel("audio"):
-    st.subheader("1 · Audio")
-    st.caption("Upload a recording or capture one live, then transcribe it.")
 
-    up_col, meta_col = st.columns([3, 2], gap="large")
-    with up_col:
-        uploaded = st.file_uploader(
-            "Upload audio", type=["wav", "mp3", "m4a", "flac", "ogg"],
-            label_visibility="collapsed",
-        )
-        recorded = st.audio_input("or record live from the microphone")
-        audio_file = uploaded or recorded
+def _fmt_dur(seconds: float | None) -> str:
+    if not seconds:
+        return "—"
+    m, s = divmod(int(round(seconds)), 60)
+    return f"{m}:{s:02d}"
 
-    with meta_col:
-        patient_ref = st.text_input(
-            "Patient reference (optional)",
-            help="e.g. initials + date, or a chart number. No PII needed.",
-        )
-        context = st.text_input(
-            "Known context (optional)",
-            help="e.g. '54F, hypertensive, on losartan'. Used only if consistent with the transcript.",
-        )
-        if not settings.asr_available:
-            st.info("Set `HF_TOKEN` in the app secrets to enable transcription.")
-        do_transcribe = st.button(
-            "Transcribe", type="primary",
-            disabled=audio_file is None or not settings.asr_available,
-            use_container_width=True,
-        )
 
-if do_transcribe and audio_file is not None:
-    try:
-        from stt.asr import transcribe
+def _stepper(current: int) -> str:
+    names = ["Record", "Transcribe", "Document"]
+    out = ['<div class="sd-steps">']
+    for i, name in enumerate(names, start=1):
+        cls = "done" if i < current else ("cur" if i == current else "")
+        mark = "&#10003;" if i < current else str(i)
+        out.append(f'<div class="step {cls}"><span class="dot">{mark}</span>{name}</div>')
+        if i < len(names):
+            out.append('<span class="sep"></span>')
+    out.append("</div>")
+    return "".join(out)
 
-        data, mime, name = read_upload(audio_file)
-        with st.spinner("Transcribing…"):
-            result = transcribe(data, mime, duration_s=duration_seconds(data, name))
-        work.update(
-            transcript=result.text,
-            audio_filename=name,
-            duration_s=result.duration_s,
-            warnings=result.quality_warnings(),
-            soap=SoapNote().as_sections(), extract={}, review={}, saved_id=None,
-        )
-        st.session_state.pop("transcript_box", None)
-    except Exception as e:  # noqa: BLE001
-        st.error(f"Transcription failed: {e}")
+
+# ---- pagehead: title + workflow stepper (matches the dashboard's .pagehead) ---
+head_l, head_r = st.columns([3, 2], vertical_alignment="center")
+with head_l:
+    st.title("🎙️ Consultation Transcript")
+with head_r:
+    st.markdown(_stepper(step), unsafe_allow_html=True)
+
+
+# =========================================================== STAGE 1 · record ==
+if not has_transcript:
+    st.caption("Record the consultation in Bisaya/Cebuano — SugboDoc transcribes "
+               "it and drafts an English SOAP note. Everything stays editable.")
+
+    _, mid, _ = st.columns([1, 2.4, 1])
+    with mid:
+        with panel("record"):
+            st.markdown('<p class="sd-rec-title">Record the consultation</p>',
+                        unsafe_allow_html=True)
+            st.markdown('<p class="sd-rec-sub">Tap the microphone and speak normally '
+                        'in Bisaya or Cebuano.</p>', unsafe_allow_html=True)
+
+            recorded = st.audio_input("Record the consultation",
+                                      label_visibility="collapsed")
+            uploaded = st.file_uploader(
+                "or upload a recording", type=["wav", "mp3", "m4a", "flac", "ogg"],
+                label_visibility="collapsed",
+            )
+            audio_file = recorded or uploaded
+
+            st.divider()
+            m_l, m_r = st.columns(2)
+            patient_ref = m_l.text_input(
+                "Patient reference (optional)", key="cx_patient_ref",
+                help="e.g. initials + date, or a chart number. No PII needed.",
+            )
+            context = m_r.text_input(
+                "Known context (optional)", key="cx_context",
+                help="e.g. '54F, hypertensive, on losartan'. Used only if "
+                     "consistent with the transcript.",
+            )
+
+            if not settings.asr_available:
+                st.info("Set `HF_TOKEN` in the app secrets to enable transcription.")
+            do_transcribe = st.button(
+                "Transcribe", type="primary", use_container_width=True,
+                disabled=audio_file is None or not settings.asr_available,
+            )
+
+    if do_transcribe and audio_file is not None:
+        try:
+            from stt.asr import transcribe
+
+            data, mime, name = read_upload(audio_file)
+            with st.spinner("Transcribing the recording…"):
+                result = transcribe(data, mime,
+                                    duration_s=duration_seconds(data, name))
+            work.update(
+                transcript=result.text, audio_filename=name,
+                duration_s=result.duration_s, warnings=result.quality_warnings(),
+                soap=SoapNote().as_sections(), extract={}, review={}, saved_id=None,
+            )
+            st.session_state.pop("transcript_box", None)
+            st.rerun()
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Transcription failed: {e}")
+
+    render_floating_assistant()
+    st.stop()
+
+
+# =============================================== STAGE 2+ · transcript & SOAP ==
+patient_ref = st.session_state.get("cx_patient_ref", "")
+context = st.session_state.get("cx_context", "")
+audio_file = None
+
+# ---- recorded summary strip -------------------------------------------------
+with panel("recorded"):
+    strip_l, strip_r = st.columns([4, 1], vertical_alignment="center")
+    fname = work["audio_filename"] or "Recording"
+    strip_l.markdown(
+        f'<div class="sd-recdone"><span class="ok">&#10003;</span>'
+        f'<span>Captured &nbsp;·&nbsp; <b>{fname}</b></span>'
+        f'<span class="meta">&nbsp;·&nbsp; {_fmt_dur(work["duration_s"])}</span></div>',
+        unsafe_allow_html=True,
+    )
+    if strip_r.button("New recording", use_container_width=True):
+        work.update(transcript="", soap=SoapNote().as_sections(), extract={},
+                    review={}, audio_filename="", duration_s=None, saved_id=None,
+                    warnings=[])
+        for k in list(st.session_state.keys()):
+            if k.startswith(("soap_", "transcript_box")):
+                st.session_state.pop(k, None)
+        st.rerun()
 
 for w in work["warnings"]:
     st.warning(w, icon=":material/warning:")
 
 
-# ----------------------------------------------------------- 2. transcript ---
+# ---- transcript document --------------------------------------------------
 with panel("transcript"):
-    st.subheader("2 · Transcript")
+    words = len(work["transcript"].split())
+    st.markdown(
+        f'<div class="sd-doc-head"><h3>Transcript</h3>'
+        f'<span class="sd-chip">{words} words</span>'
+        f'<span class="sd-chip">{_fmt_dur(work["duration_s"])}</span></div>',
+        unsafe_allow_html=True,
+    )
     st.caption("Edit freely before generating the note — the SOAP step reads this text.")
     transcript = st.text_area(
-        "Transcript (edit freely before generating the note)",
-        value=work["transcript"], key="transcript_box", height=200,
+        "Transcript", value=work["transcript"], key="transcript_box", height=240,
         label_visibility="collapsed",
     )
     work["transcript"] = transcript
 
 
-# ------------------------------------------------------------- 3. SOAP note ---
+# ---- SOAP workspace -----------------------------------------------------------
 llm_ok = settings.llm_available
 
-# The panel is laid out up front; the handlers below render back into these
-# containers, so the click logic stays at module level instead of nesting.
 with panel("soap"):
-    st.subheader("3 · SOAP note")
-    st.caption("Draft the note, pull structured facts, then check it against the transcript.")
+    st.markdown('<div class="sd-doc-head"><h3>Generated SOAP note</h3></div>',
+                unsafe_allow_html=True)
+    st.markdown('<p class="sd-soap-toolbar">Draft the note from the transcript, '
+                'pull structured facts, then check it against the source.</p>',
+                unsafe_allow_html=True)
     c_gen, c_extract, c_review = st.columns(3)
     soap_status = st.container()
     soap_box = st.container()
@@ -155,7 +228,8 @@ if c_review.button("Run grounding review", use_container_width=True,
 
 if not llm_ok:
     soap_status.info(
-        "Set `GEMINI_API_KEY` in the app secrets to enable SOAP generation, extraction, and review."
+        "Set `GEMINI_API_KEY` in the app secrets to enable SOAP generation, "
+        "extraction, and review."
     )
 
 with soap_box:
@@ -170,19 +244,21 @@ with soap_detail:
             render_review(work["review"])
 
 
-# ---------------------------------------------------------------- 4. save ----
+# ---- save (quiet footer) ----------------------------------------------------
 with panel("save"):
-    st.subheader("4 · Save")
-    st.caption("Stored locally in the notes database — review it later under Past Notes.")
-    t_col, tag_col = st.columns(2)
-    title = t_col.text_input(
-        "Note title", value=work.get("title", "") or (patient_ref or "Untitled consult")
+    s_title, s_tags, s_btn = st.columns([2, 2, 1], vertical_alignment="bottom")
+    title = s_title.text_input(
+        "Note title",
+        value=work.get("title", "") or (patient_ref or "Untitled consult"),
     )
-    tags = tag_col.text_input("Tags (comma-separated, optional)")
-    save_col, status_col = st.columns([1, 3])
+    tags = s_tags.text_input("Tags (comma-separated, optional)")
+    save_clicked = s_btn.button(
+        "Save to database", type="primary", use_container_width=True,
+        disabled=not transcript.strip(),
+    )
+    status_col = st.container()
 
-if save_col.button("Save to database", type="primary", use_container_width=True,
-                   disabled=not transcript.strip()):
+if save_clicked:
     fields = dict(
         title=title, patient_ref=patient_ref, context=context,
         audio_filename=work["audio_filename"], duration_s=work["duration_s"],

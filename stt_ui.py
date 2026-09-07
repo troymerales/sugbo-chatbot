@@ -34,11 +34,18 @@ def llm_guard(action: str = "That step"):
 
 
 def editable_soap(soap: dict[str, str], *, key_prefix: str) -> dict[str, str]:
+    """The four SOAP sections as an editable 2x2 grid. Each cell is wrapped in a
+    keyed container (``st-key-<prefix>_cell_<section>``) so the stylesheet can
+    give it a subtle card + a per-section accent stripe."""
     edited: dict[str, str] = {}
-    for section in SECTIONS:
-        edited[section] = st.text_area(
-            section, value=soap.get(section, ""), key=f"{key_prefix}_{section}", height=140
-        )
+    cols = st.columns(2, gap="medium")
+    for i, section in enumerate(SECTIONS):
+        with cols[i % 2]:
+            with st.container(key=f"{key_prefix}_cell_{section.lower()}"):
+                edited[section] = st.text_area(
+                    section, value=soap.get(section, ""),
+                    key=f"{key_prefix}_{section}", height=130,
+                )
     return edited
 
 

@@ -350,18 +350,212 @@ html, body, [class*="css"]{
 [data-testid="stMain"] input, [data-testid="stMain"] textarea{ font-size:13.5px !important; }
 [data-testid="stMain"] label p{ font-size:13px !important; font-weight:600; color:var(--sd-ink-2); }
 
-/* ---- file uploader + audio input ---- */
-[data-testid="stMain"] [data-testid="stFileUploaderDropzone"]{
-  border:1.5px dashed #c6cae4; border-radius:var(--sd-r);
-  background:linear-gradient(180deg,#fbfbff,#f6f7fd);
-  transition:border-color .14s ease, background .14s ease;
+/* ======================================================================
+   Consultation Transcript page
+   The workflow is Record -> Transcribe -> Document. The layout mirrors that:
+   a narrow, centred recording card is the focal point; once a transcript
+   exists it collapses to a one-line summary and the document + SOAP cards
+   take over at a wider reading width. All of it uses the same tokens as the
+   dashboard (card, --sd-r, --sd-shadow, indigo).
+   ====================================================================== */
+
+/* ---- workflow stepper (pagehead, right side) ---- */
+.sd-steps{ display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; }
+.sd-steps .step{ display:flex; align-items:center; gap:7px; color:var(--sd-muted); }
+.sd-steps .step .dot{
+  width:20px; height:20px; border-radius:50%; display:grid; place-items:center;
+  font-size:11px; background:var(--sd-line); color:var(--sd-muted);
 }
-[data-testid="stMain"] [data-testid="stFileUploaderDropzone"]:hover{
-  border-color:var(--sd-indigo); background:#f6f7ff;
+.sd-steps .step.cur{ color:var(--sd-indigo); }
+.sd-steps .step.cur .dot{ background:var(--sd-indigo); color:#fff; }
+.sd-steps .step.done{ color:var(--sd-ink-2); }
+.sd-steps .step.done .dot{ background:var(--sd-ok-bg); color:var(--sd-ok); }
+.sd-steps .sep{ width:20px; height:1px; background:var(--sd-line); }
+@media (max-width:760px){ .sd-steps .step span{ display:none; } }
+
+/* ---- the recording hero card ---- */
+[class*="st-key-sdpanel_record"]{
+  text-align:center; padding:28px 26px 22px;
 }
-[data-testid="stMain"] [data-testid="stAudioInput"]{
-  border:1px solid var(--sd-line); border-radius:var(--sd-r); background:var(--sd-card);
+.sd-rec-title{ font-size:17px; font-weight:700; color:var(--sd-ink); margin:0 0 4px; }
+.sd-rec-sub{ font-size:12.8px; color:var(--sd-muted); margin:0 auto 18px; max-width:none; line-height:1.5; }
+
+/* ==================================================================
+   st.audio_input — three states, one layout that never jumps.
+
+     idle      : "Record" button, and no "Stop recording"/"Play"/"Pause"
+     recording : "Stop recording" button  -> big red pulsing mic + live
+                 waveform + running timer
+     recorded  : "Play"/"Pause" button    -> a compact review player.
+                 NB a "Record" button is also present here (to re-record),
+                 so idle must be detected by the *absence* of the others.
+
+   The widget's flex row is re-stacked as a centred column pinned to the
+   top (justify-content:flex-start), so the mic sits at a fixed position
+   and the waveform / timer simply appear in the space below it — earlier
+   `center` re-centred the whole stack and shoved the mic upward the
+   instant recording began. --sd-mic is the single size knob. */
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]{
+  --sd-mic:96px;
+  border:0; background:none; display:flex; justify-content:center;
 }
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] > div{
+  flex-direction:column !important; align-items:center !important;
+  justify-content:flex-start !important; background:none !important;
+  gap:10px; width:100%; padding:0 !important;
+  min-height:calc(var(--sd-mic) + 22px);
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] > div > *{ margin:0 !important; }
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] [data-testid="stElementToolbar"]{ display:none !important; }
+
+/* every wrapper span/div around the button -> zero-margin flex-centre box, so
+   the mic (and the stop square) lands dead centre whatever state we're in */
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] *:has(> [data-testid="stAudioInputActionButton"]),
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] *:has(> * > [data-testid="stAudioInputActionButton"]){
+  margin:0 !important; padding:0 !important; gap:14px;
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  width:auto !important; height:auto !important;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInputActionButton"]{
+  width:var(--sd-mic) !important; height:var(--sd-mic) !important;
+  min-width:var(--sd-mic) !important; flex:0 0 var(--sd-mic) !important;
+  border-radius:50% !important; padding:0 !important;
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  background:linear-gradient(135deg,#4a50e4,#3b41d6) !important;
+  box-shadow:0 12px 30px rgba(59,65,214,.36) !important;
+  transition:transform .16s cubic-bezier(.2,.8,.3,1), box-shadow .16s ease, background .16s ease !important;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInputActionButton"] svg{
+  width:40% !important; height:40% !important; display:block !important;
+  fill:#fff !important; color:#fff !important;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInputActionButton"]:hover{
+  transform:translateY(-2px) scale(1.05);
+  box-shadow:0 16px 34px rgba(59,65,214,.44) !important;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInputActionButton"]:active{ transform:scale(.96); }
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInputWaveformTimeCode"]{
+  font-variant-numeric:tabular-nums; color:var(--sd-ink-2); font-weight:600; font-size:13px;
+}
+
+/* The WaveSurfer waveform is hidden in every state: it only renders when its
+   container is sized at init time, which our restacked layout can't guarantee,
+   and a 1px sliver looks worse than none. The pulsing mic + the timer carry
+   the feedback instead. */
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] [data-testid="stAudioInputWaveSurfer"]{
+  display:none !important;
+}
+/* idle: no timer either */
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]:not(:has([aria-label="Stop recording"])):not(:has([aria-label="Play"])):not(:has([aria-label="Pause"])) [data-testid="stAudioInputWaveformTimeCode"]{
+  display:none !important;
+}
+
+/* recording: red pulsing stop + running timer below the mic */
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]:has([aria-label="Stop recording"]) [data-testid="stAudioInputActionButton"]{
+  background:linear-gradient(135deg,#e5555b,#d64550) !important;
+  box-shadow:0 10px 26px rgba(214,69,80,.4) !important;
+  animation:sd-rec-pulse 1.6s ease-out infinite;
+}
+
+/* recorded: a compact review row — Play (indigo, 44px) · duration · a ghost
+   re-record button — centred in the same reserved box */
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]:is(:has([aria-label="Play"]),:has([aria-label="Pause"])) > div{
+  justify-content:center !important;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]:is(:has([aria-label="Play"]),:has([aria-label="Pause"])) *:has(> [data-testid="stAudioInputActionButton"]){
+  flex-direction:row !important; gap:12px;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]:is(:has([aria-label="Play"]),:has([aria-label="Pause"])) [data-testid="stAudioInputActionButton"]{
+  width:44px !important; height:44px !important; min-width:44px !important; flex:0 0 44px !important;
+  box-shadow:0 4px 12px rgba(59,65,214,.24) !important;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]:is(:has([aria-label="Play"]),:has([aria-label="Pause"])) [data-testid="stAudioInputActionButton"][aria-label="Record"]{
+  background:var(--sd-card) !important; border:1px solid var(--sd-line) !important; box-shadow:none !important;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]:is(:has([aria-label="Play"]),:has([aria-label="Pause"])) [data-testid="stAudioInputActionButton"][aria-label="Record"] svg{
+  fill:var(--sd-ink-2) !important; color:var(--sd-ink-2) !important;
+}
+@keyframes sd-rec-pulse{
+  0%{ box-shadow:0 0 0 0 rgba(229,72,77,.45); }
+  70%{ box-shadow:0 0 0 16px rgba(229,72,77,0); }
+  100%{ box-shadow:0 0 0 0 rgba(229,72,77,0); }
+}
+
+/* the "or upload a recording" link, centred under the mic */
+[class*="st-key-sdpanel_record"] [data-testid="stFileUploader"]{ margin:6px 0 2px; }
+[class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"]{
+  border:0 !important; background:none !important; padding:0 !important;
+  min-height:0 !important; height:auto !important; justify-content:center;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzoneInstructions"]{ display:none !important; }
+[class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button{
+  background:none !important; border:0 !important; box-shadow:none !important;
+  padding:0 !important; min-height:0 !important; font-size:0 !important;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button::after{
+  content:"or upload a recording";
+  font-size:12.5px; font-weight:500; color:var(--sd-muted);
+  text-decoration:underline; text-underline-offset:2px;
+}
+[class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button:hover::after{ color:var(--sd-indigo); }
+[data-testid="stMain"] [data-testid="stFileUploaderFile"]{ font-size:12.5px; padding:4px 0; }
+
+/* thin rule between capture and the patient-detail fields inside the hero */
+[class*="st-key-sdpanel_record"] hr{ margin:14px 0 12px; }
+[class*="st-key-sdpanel_record"] [data-testid="stTextInput"] label p{ font-weight:600; }
+
+/* ---- recorded summary strip (after transcription) ---- */
+[class*="st-key-sdpanel_recorded"]{
+  padding:12px 16px; display:flex; align-items:center;
+}
+.sd-recdone{ display:flex; align-items:center; gap:10px; font-size:13px; color:var(--sd-ink-2); }
+.sd-recdone .ok{
+  width:22px; height:22px; border-radius:50%; background:var(--sd-ok-bg); color:var(--sd-ok);
+  display:grid; place-items:center; font-size:12px; flex:0 0 22px;
+}
+.sd-recdone b{ color:var(--sd-ink); }
+.sd-recdone .meta{ color:var(--sd-muted); }
+
+/* ---- transcript: a document surface, not a form field ---- */
+[class*="st-key-sdpanel_transcript"]{ padding:18px 22px 16px; }
+[class*="st-key-sdpanel_transcript"] [data-testid="stTextArea"] textarea{
+  font-size:14.5px !important; line-height:1.72 !important;
+  background:#fcfcff !important; border-color:#e9eaf4 !important;
+  padding:14px 16px !important; min-height:210px;
+}
+.sd-doc-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:8px; }
+.sd-doc-head h3{ margin:0; }
+.sd-chip{
+  font-size:11.5px; font-weight:600; color:var(--sd-muted);
+  background:var(--sd-bg); border:1px solid var(--sd-line); border-radius:999px;
+  padding:2px 9px;
+}
+
+/* ---- SOAP: a 2x2 workspace, each quadrant lightly accented ---- */
+[class*="st-key-sdpanel_soap"]{ padding:18px 22px 16px; }
+[class*="st-key-soap_cell_"], [class*="st-key-pn_soap_cell_"]{
+  background:#fcfcff; border:1px solid #e9eaf4; border-left:3px solid var(--sd-line);
+  border-radius:var(--sd-r-sm); padding:10px 12px 4px; margin-bottom:10px;
+}
+[class*="_cell_subjective"]{ border-left-color:var(--sd-indigo); }
+[class*="_cell_objective"]{ border-left-color:#2bb8ab; }
+[class*="_cell_assessment"]{ border-left-color:var(--sd-warn); }
+[class*="_cell_plan"]{ border-left-color:var(--sd-ok); }
+[class*="st-key-soap_cell_"] textarea, [class*="st-key-pn_soap_cell_"] textarea{
+  border:0 !important; background:none !important; padding:2px 0 !important;
+  font-size:13.5px !important; line-height:1.6 !important; min-height:120px;
+}
+[class*="st-key-soap_cell_"] label p, [class*="st-key-pn_soap_cell_"] label p{
+  text-transform:uppercase; letter-spacing:.5px; font-size:11px !important;
+  color:var(--sd-muted); font-weight:700;
+}
+.sd-soap-toolbar{ font-size:12.5px; color:var(--sd-muted); margin:2px 0 12px; }
+
+/* ---- save: a quiet footer, not another hero card ---- */
+[class*="st-key-sdpanel_save"]{
+  padding:14px 18px; background:#fbfbfe;
+}
+[class*="st-key-sdpanel_save"] label p{ font-weight:600; }
 
 /* ---- alerts ----
    Streamlit 1.49 carries the variant on an inner stAlertContent* element, not a

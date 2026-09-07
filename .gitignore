@@ -20,7 +20,14 @@ docs/SugboDoc-Documentation.md
 docs/system-prompt.md
 docs/homepage-reference.png
 
+# --- backtest experiment: keep the sample + code, ignore real data + outputs ---
+evaluation/data/jira_tickets*.csv
+!evaluation/data/jira_tickets.sample.csv
+evaluation/results/*
+!evaluation/results/.gitkeep
+
 # --- generated at runtime ---
+.ipynb_checkpoints/
 __pycache__/
 *.egg-info/
 .pytest_cache/
