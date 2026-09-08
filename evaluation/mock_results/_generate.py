@@ -167,7 +167,8 @@ GROUND_FAIL_REASON = ("draft answer cited a UI label ('Bulk actions') that is no
 
 # --------------------------------------------------------------------------- #
 
-now = datetime.now(timezone.utc)
+# fixed reference time so re-running this script produces a byte-identical dataset
+now = datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc)
 rows = []
 # pick two FULL-ish tickets whose answer the grounding pass will reject
 ground_fail_idx = {7, 22}
@@ -245,6 +246,8 @@ lat = df["latency_s"]
 metrics = {
     "total_tickets": total, "full": full, "partial": partial, "human": human,
     "potential_deflection_rate": round(full / total, 4),
+    "deflection_ci95_low": bt.wilson_ci(full, total)[0],
+    "deflection_ci95_high": bt.wilson_ci(full, total)[1],
     "partial_assistance_rate": round(partial / total, 4),
     "human_required_rate": round(human / total, 4),
     "evaluator_fallback_count": 0,

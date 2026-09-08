@@ -200,6 +200,17 @@ def test_doc_overlap_and_likely_misses():
     assert list(lm["ticket_id"]) == ["a"]          # refused + high overlap only
 
 
+def test_wilson_ci():
+    lo, hi = bt.wilson_ci(2, 33)                        # the real deflection point
+    assert (round(lo, 3), round(hi, 3)) == (0.017, 0.196)
+    assert lo < 2 / 33 < hi
+    assert bt.wilson_ci(0, 0) == (0.0, 0.0)
+    lo0, hi0 = bt.wilson_ci(0, 20)
+    assert lo0 == 0.0 and 0 < hi0 < 0.2
+    m = bt.calculate_metrics(pd.DataFrame({"classification": ["FULL", "HUMAN", "HUMAN"]}))
+    assert m["deflection_ci95_low"] <= m["potential_deflection_rate"] <= m["deflection_ci95_high"]
+
+
 def test_metrics_report_cost_and_latency():
     results = pd.DataFrame({
         "classification": ["FULL", "HUMAN", "HUMAN"],

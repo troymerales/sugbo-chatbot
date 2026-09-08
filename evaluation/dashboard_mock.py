@@ -241,7 +241,11 @@ def section_tldr(k: dict, metrics: dict, agreement: dict) -> None:
         c1, c2, c3 = st.columns([1.1, 1, 1.3])
         c1.metric("Potential deflection rate", f"{k['deflection']:.1%}",
                   help="FULL ÷ tickets evaluated")
-        c1.caption(f"{k['full']} of {k['total']} tickets")
+        lo, hi = metrics.get("deflection_ci95_low"), metrics.get("deflection_ci95_high")
+        if lo is not None and k["total"]:
+            c1.caption(f"{k['full']} of {k['total']} tickets · 95% CI {lo:.1%}–{hi:.1%} (Wilson)")
+        else:
+            c1.caption(f"{k['full']} of {k['total']} tickets")
 
         n = agreement.get("reviewed", 0)
         if n:

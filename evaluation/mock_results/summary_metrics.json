@@ -4,6 +4,8 @@
   "partial": 7,
   "human": 14,
   "potential_deflection_rate": 0.3636,
+  "deflection_ci95_low": 0.2219,
+  "deflection_ci95_high": 0.5338,
   "partial_assistance_rate": 0.2121,
   "human_required_rate": 0.4242,
   "evaluator_fallback_count": 0,
@@ -36,5 +38,5 @@
     "prod_refusal_marker": "I don't have enough information in my records to answer that",
     "note": "SIMULATED dataset for the public demo \u2014 not a real backtest run."
   },
-  "generated_at": "2026-09-08T00:43:38+00:00"
+  "generated_at": "2026-09-07T12:00:00+00:00"
 }

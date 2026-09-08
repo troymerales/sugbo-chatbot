@@ -792,6 +792,25 @@ def compare_verification(with_verify: pd.DataFrame,
     return m
 
 
+def wilson_ci(successes: int, n: int, *, z: float = 1.959963985) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion (default z = 1.96 → 95%).
+
+    Used for the deflection rate: with n=33 and 2 successes the normal
+    approximation is useless, and this is the standard fix. Returns (low, high),
+    each rounded to 4 dp and clamped to [0, 1].
+    """
+    if n <= 0:
+        return (0.0, 0.0)
+    import math
+
+    p = successes / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    centre = (p + z2 / (2 * n)) / denom
+    half = (z / denom) * math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))
+    return (round(max(0.0, centre - half), 4), round(min(1.0, centre + half), 4))
+
+
 def _truthy(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip().str.lower().isin({"true", "1", "yes"})
 
@@ -815,6 +834,8 @@ def calculate_metrics(results: pd.DataFrame, cfg: BacktestConfig | None = None) 
         "partial": partial,
         "human": human,
         "potential_deflection_rate": round(full / total, 4) if total else 0.0,
+        "deflection_ci95_low": wilson_ci(full, total)[0],
+        "deflection_ci95_high": wilson_ci(full, total)[1],
         "partial_assistance_rate": round(partial / total, 4) if total else 0.0,
         "human_required_rate": round(human / total, 4) if total else 0.0,
         "evaluator_fallback_count": int(

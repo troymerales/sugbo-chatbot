@@ -5,7 +5,7 @@ JIRA-0001,How do I add a new patient profile in SugboDoc?,True,"From **Patients 
 2. Select **Add** (or **Edit** on an existing record).
 3. Choose the patient / practitioner from the picker.
 
-The change takes effect immediately.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.54,2026-09-07T23:03:38+00:00,gemini-flash-latest,False,47,0.75,Patients (Patient Worklist) (75%); Create an encounter (75%); Create a service request (75%)
+The change takes effect immediately.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.54,2026-09-07T10:20:00+00:00,gemini-flash-latest,False,47,0.75,Patients (Patient Worklist) (75%); Create an encounter (75%); Create a service request (75%)
 JIRA-0002,Steps to book an appointment for an existing patient,True,"From **Patients (Patient Worklist)** in the documentation:
 
 1. Open the relevant module.
@@ -13,7 +13,7 @@ JIRA-0002,Steps to book an appointment for an existing patient,True,"From **Pati
 3. Select **Add** (or **Edit** on an existing record).
 4. Set the date and any optional details.
 
-You can edit it later from the same screen.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.36,2026-09-07T23:07:38+00:00,gemini-flash-latest,False,52,0.4,Update an appointment (40%); Patients (Patient Worklist) (40%); Create an appointment (40%)
+You can edit it later from the same screen.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.36,2026-09-07T10:24:00+00:00,gemini-flash-latest,False,52,0.4,Update an appointment (40%); Patients (Patient Worklist) (40%); Create an appointment (40%)
 JIRA-0003,Where do I set a practitioner's weekly schedule?,True,"The documentation covers **Schedule module**, but it doesn't spell out the exact option you're describing. What the docs *do* describe:
 
 1. Navigate to the relevant module.
@@ -22,7 +22,7 @@ JIRA-0003,Where do I set a practitioner's weekly schedule?,True,"The documentati
 4. Choose the patient / practitioner from the picker.
 5. Select **Add** (or **Edit** on an existing record).
 
-You'll likely need a colleague to confirm the rest.",PARTIAL,"On-topic and partly useful, but a staff member would still need to finish or verify it.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.38,2026-09-07T23:08:38+00:00,gemini-flash-latest,False,48,0.8,Schedule module (80%); Practitioner header (60%); Core concepts (40%)
+You'll likely need a colleague to confirm the rest.",PARTIAL,"On-topic and partly useful, but a staff member would still need to finish or verify it.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.38,2026-09-07T10:25:00+00:00,gemini-flash-latest,False,48,0.8,Schedule module (80%); Practitioner header (60%); Core concepts (40%)
 JIRA-0004,How to write a SOAP note during an encounter,True,"From **Encounters — Clinical Notes** in the documentation:
 
 1. Open the relevant module.
@@ -30,23 +30,23 @@ JIRA-0004,How to write a SOAP note during an encounter,True,"From **Encounters �
 3. Select **Add** (or **Edit** on an existing record).
 4. Fill in the required fields — the form flags anything missing.
 
-The record appears in the list straight away.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.5,2026-09-07T23:11:38+00:00,gemini-flash-latest,False,44,0.4,Create clinical notes (40%); Create an invoice — patient pays upfront (Paid) (40%); Create a diagnosis (40%)
+The record appears in the list straight away.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.5,2026-09-07T10:28:00+00:00,gemini-flash-latest,False,44,0.4,Create clinical notes (40%); Create an invoice — patient pays upfront (Paid) (40%); Create a diagnosis (40%)
 JIRA-0005,Cannot save a SOAP note - Save button greys out and nothing happens,False,"A few things to check first:
 
 - Try it in a different browser.
 - Re-select the patient and retry the action.
 
-If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,High,In Progress,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.83,2026-09-07T23:14:38+00:00,gemini-flash-latest,False,67,0.444,Core concepts (44%); Create a diagnosis (22%); Clinical Notes Templates (22%)
+If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,High,In Progress,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.83,2026-09-07T10:31:00+00:00,gemini-flash-latest,False,67,0.444,Core concepts (44%); Create a diagnosis (22%); Clinical Notes Templates (22%)
 JIRA-0006,How do I record a patient's vital signs?,True,"From **Patients (Patient Worklist)** in the documentation:
 
 1. Go to the relevant module.
 2. Fill in the required fields — the form flags anything missing.
 3. Select **Add** (or **Edit** on an existing record).
 
-The change takes effect immediately.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.05,2026-09-07T23:19:38+00:00,gemini-flash-latest,False,40,1.0,Edit vital signs (100%); Core concepts (100%); Add vital signs (75%)
-JIRA-0007,Need to reset my password - locked out of my account,True,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,Requires a billing or subscription action that only an admin can perform.,Access,High,Done,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.85,2026-09-07T23:21:38+00:00,gemini-flash-latest,False,52,0.167,Staff Management (17%); Patients (Patient Worklist) (17%); Core concepts (17%)
-JIRA-0008,How to create a prescription for a patient,True,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,"The verification pass rejected the drafted answer, so it became a refusal.",Service Request,Medium,Done,True,True,False,draft answer cited a UI label ('Bulk actions') that is not in the documentation; downgraded to a refusal,gemini-3.1-flash-lite,,1.47,2026-09-07T23:24:38+00:00,gemini-flash-latest,False,42,1.0,Create a prescription (100%); View / export a prescription (67%); Create clinical notes (67%)
-JIRA-0009,Add a new staff account for a nurse who just joined,False,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,Requires a billing or subscription action that only an admin can perform.,Access,Medium,To Do,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.65,2026-09-07T23:26:38+00:00,gemini-flash-latest,False,51,0.571,Add a nurse (57%); Staff Management (43%); Schedule module (29%)
+The change takes effect immediately.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.05,2026-09-07T10:36:00+00:00,gemini-flash-latest,False,40,1.0,Edit vital signs (100%); Core concepts (100%); Add vital signs (75%)
+JIRA-0007,Need to reset my password - locked out of my account,True,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,Requires a billing or subscription action that only an admin can perform.,Access,High,Done,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.85,2026-09-07T10:38:00+00:00,gemini-flash-latest,False,52,0.167,Staff Management (17%); Patients (Patient Worklist) (17%); Core concepts (17%)
+JIRA-0008,How to create a prescription for a patient,True,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,"The verification pass rejected the drafted answer, so it became a refusal.",Service Request,Medium,Done,True,True,False,draft answer cited a UI label ('Bulk actions') that is not in the documentation; downgraded to a refusal,gemini-3.1-flash-lite,,1.47,2026-09-07T10:41:00+00:00,gemini-flash-latest,False,42,1.0,Create a prescription (100%); View / export a prescription (67%); Create clinical notes (67%)
+JIRA-0009,Add a new staff account for a nurse who just joined,False,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,Requires a billing or subscription action that only an admin can perform.,Access,Medium,To Do,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.65,2026-09-07T10:43:00+00:00,gemini-flash-latest,False,51,0.571,Add a nurse (57%); Staff Management (43%); Schedule module (29%)
 JIRA-0010,How do I search for a patient by phone number?,True,"From **Patients (Patient Worklist)** in the documentation:
 
 1. Navigate to the relevant module.
@@ -54,13 +54,13 @@ JIRA-0010,How do I search for a patient by phone number?,True,"From **Patients (
 3. Fill in the required fields — the form flags anything missing.
 4. Set the date and any optional details.
 
-The change takes effect immediately.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.58,2026-09-07T23:29:38+00:00,gemini-flash-latest,False,46,0.75,Add an internal immunization (75%); Add an external immunization (75%); Add a patient via search (75%)
+The change takes effect immediately.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.58,2026-09-07T10:46:00+00:00,gemini-flash-latest,False,46,0.75,Add an internal immunization (75%); Add an external immunization (75%); Add a patient via search (75%)
 JIRA-0011,Immunization record not showing on the patient timeline after saving,False,"A few things to check first:
 
 - Confirm every required field on the form is filled in.
 - Clear the browser cache and hard-refresh the page.
 
-If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,Medium,To Do,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.43,2026-09-07T23:32:38+00:00,gemini-flash-latest,False,68,0.429,View / export immunizations (43%); Add an internal immunization (43%); Add an external immunization (43%)
+If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,Medium,To Do,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.43,2026-09-07T10:49:00+00:00,gemini-flash-latest,False,68,0.429,View / export immunizations (43%); Add an internal immunization (43%); Add an external immunization (43%)
 JIRA-0012,How to log an immunization / vaccine dose,True,"From **Immunizations** in the documentation:
 
 1. Open the relevant module.
@@ -69,35 +69,35 @@ JIRA-0012,How to log an immunization / vaccine dose,True,"From **Immunizations**
 4. Choose the patient / practitioner from the picker.
 5. Select **Add** (or **Edit** on an existing record).
 
-You can edit it later from the same screen.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,26.25,2026-09-07T23:36:38+00:00,gemini-flash-latest,False,41,0.5,View / export immunizations (50%); Immunizations (50%); Add an internal immunization (50%)
+You can edit it later from the same screen.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,26.25,2026-09-07T10:53:00+00:00,gemini-flash-latest,False,41,0.5,View / export immunizations (50%); Immunizations (50%); Add an internal immunization (50%)
 JIRA-0013,Steps to issue a patient bill after a consultation,True,"From **Patients (Patient Worklist)** in the documentation:
 
 1. From the sidebar open the relevant module.
 2. Set the date and any optional details.
 3. Select **Add** (or **Edit** on an existing record).
 
-You can edit it later from the same screen.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.11,2026-09-07T23:39:38+00:00,gemini-flash-latest,False,50,0.5,Create an invoice — bill for later (Unpaid) (50%); Core concepts (33%); Void a payment (17%)
+You can edit it later from the same screen.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.11,2026-09-07T10:56:00+00:00,gemini-flash-latest,False,50,0.5,Create an invoice — bill for later (Unpaid) (50%); Core concepts (33%); Void a payment (17%)
 JIRA-0014,How do I record a deposit or advance payment from a patient?,True,"From **Patients (Patient Worklist)** in the documentation:
 
 1. Navigate to the relevant module.
 2. Select **Add** (or **Edit** on an existing record).
 3. Set the date and any optional details.
 
-The record appears in the list straight away.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.53,2026-09-07T23:43:38+00:00,gemini-flash-latest,False,60,0.667,Void a payment (67%); Create an invoice — patient pays upfront (Paid) (67%); Add a deposit to an unpaid invoice (67%)
+The record appears in the list straight away.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.53,2026-09-07T11:00:00+00:00,gemini-flash-latest,False,60,0.667,Void a payment (67%); Create an invoice — patient pays upfront (Paid) (67%); Add a deposit to an unpaid invoice (67%)
 JIRA-0015,Void a payment that was entered with the wrong amount,True,"A few things to check first:
 
 - Re-select the patient and retry the action.
 - Check whether the same thing happens on another staff account.
 - Clear the browser cache and hard-refresh the page.
 
-If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.01,2026-09-07T23:44:38+00:00,gemini-flash-latest,False,53,0.4,Void a payment (40%); Create an invoice — patient pays upfront (Paid) (40%); Add a deposit to an unpaid invoice (40%)
+If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.01,2026-09-07T11:01:00+00:00,gemini-flash-latest,False,53,0.4,Void a payment (40%); Create an invoice — patient pays upfront (Paid) (40%); Add a deposit to an unpaid invoice (40%)
 JIRA-0016,Patient billing total is wrong - shows double the service price,False,"A few things to check first:
 
 - Clear the browser cache and hard-refresh the page.
 - Check whether the same thing happens on another staff account.
 - Confirm every required field on the form is filled in.
 
-If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,High,To Do,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.46,2026-09-07T23:48:38+00:00,gemini-flash-latest,False,63,0.375,Core concepts (38%); Charges (Bills & Payments setup) (38%); Void a payment (25%)
+If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,High,To Do,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.46,2026-09-07T11:05:00+00:00,gemini-flash-latest,False,63,0.375,Core concepts (38%); Charges (Bills & Payments setup) (38%); Void a payment (25%)
 JIRA-0017,How to add a new department to our facility,True,"The documentation covers **Facility Settings**, but it doesn't spell out the automated version of this. What the docs *do* describe:
 
 1. Navigate to the relevant module.
@@ -105,16 +105,16 @@ JIRA-0017,How to add a new department to our facility,True,"The documentation co
 3. Click **Save**.
 4. Select **Add** (or **Edit** on an existing record).
 
-You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.38,2026-09-07T23:51:38+00:00,gemini-flash-latest,False,43,1.0,Create a service request (100%); Locations (Branches) (67%); From the list (67%)
+You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.38,2026-09-07T11:08:00+00:00,gemini-flash-latest,False,43,1.0,Create a service request (100%); Locations (Branches) (67%); From the list (67%)
 JIRA-0018,Where do I configure clinic rooms and resources?,True,"The documentation covers **Facility Settings — Resources**, but it doesn't spell out doing it in bulk. What the docs *do* describe:
 
 1. Go to the relevant module.
 2. Click **Save**.
 3. Choose the patient / practitioner from the picker.
 
-You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.71,2026-09-07T23:53:38+00:00,gemini-flash-latest,False,48,0.4,Core concepts (40%); Schedule module (20%); Resources (20%)
-JIRA-0019,How do I add a second clinic location under our subscription?,True,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,The reply is a refusal — the documentation does not cover this.,Service Request,Medium,Done,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.61,2026-09-07T23:56:38+00:00,gemini-flash-latest,False,61,0.5,Locations (Branches) (50%); Create an encounter (50%); Core concepts (50%)
-JIRA-0020,Our subscription expired and all users are locked out - urgent,False,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,The request needs privileged access or a manual change by staff.,Billing,High,To Do,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.51,2026-09-08T00:00:38+00:00,gemini-flash-latest,False,62,0.286,Core concepts (29%); Void a payment (14%); View / export immunizations (14%)
+You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.71,2026-09-07T11:10:00+00:00,gemini-flash-latest,False,48,0.4,Core concepts (40%); Schedule module (20%); Resources (20%)
+JIRA-0019,How do I add a second clinic location under our subscription?,True,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,The reply is a refusal — the documentation does not cover this.,Service Request,Medium,Done,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.61,2026-09-07T11:13:00+00:00,gemini-flash-latest,False,61,0.5,Locations (Branches) (50%); Create an encounter (50%); Core concepts (50%)
+JIRA-0020,Our subscription expired and all users are locked out - urgent,False,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,The request needs privileged access or a manual change by staff.,Billing,High,To Do,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.51,2026-09-07T11:17:00+00:00,gemini-flash-latest,False,62,0.286,Core concepts (29%); Void a payment (14%); View / export immunizations (14%)
 JIRA-0021,How to reschedule an existing appointment to another day,True,"From **Appointments** in the documentation:
 
 1. Go to the relevant module.
@@ -122,7 +122,7 @@ JIRA-0021,How to reschedule an existing appointment to another day,True,"From **
 3. Fill in the required fields — the form flags anything missing.
 4. Choose the patient / practitioner from the picker.
 
-The record appears in the list straight away.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.0,2026-09-08T00:03:38+00:00,gemini-flash-latest,False,56,0.4,Schedule module (40%); Pay the monthly subscription (40%); Update an appointment (20%)
+The record appears in the list straight away.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.0,2026-09-07T11:20:00+00:00,gemini-flash-latest,False,56,0.4,Schedule module (40%); Pay the monthly subscription (40%); Update an appointment (20%)
 JIRA-0022,Cancel an appointment and notify the patient,True,"From **Patients (Patient Worklist)** in the documentation:
 
 1. Navigate to the relevant module.
@@ -130,28 +130,28 @@ JIRA-0022,Cancel an appointment and notify the patient,True,"From **Patients (Pa
 3. Click **Save**.
 4. Set the date and any optional details.
 
-The change takes effect immediately.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.55,2026-09-08T00:07:38+00:00,gemini-flash-latest,False,44,0.5,Update an appointment (50%); Create an appointment (50%); Create a prescription (50%)
-JIRA-0023,How do I mark a patient as a no-show?,True,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,"The verification pass rejected the drafted answer, so it became a refusal.",Service Request,Low,Done,True,True,False,draft answer cited a UI label ('Bulk actions') that is not in the documentation; downgraded to a refusal,gemini-3.1-flash-lite,,1.31,2026-09-08T00:10:38+00:00,gemini-flash-latest,False,37,0.667,Edit clinical notes (67%); Create clinical notes (67%); Clinical Notes Templates (67%)
+The change takes effect immediately.",FULL,The reply gives the documented steps end to end and needs no staff action.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.55,2026-09-07T11:24:00+00:00,gemini-flash-latest,False,44,0.5,Update an appointment (50%); Create an appointment (50%); Create a prescription (50%)
+JIRA-0023,How do I mark a patient as a no-show?,True,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,"The verification pass rejected the drafted answer, so it became a refusal.",Service Request,Low,Done,True,True,False,draft answer cited a UI label ('Bulk actions') that is not in the documentation; downgraded to a refusal,gemini-3.1-flash-lite,,1.31,2026-09-07T11:27:00+00:00,gemini-flash-latest,False,37,0.667,Edit clinical notes (67%); Create clinical notes (67%); Clinical Notes Templates (67%)
 JIRA-0024,Calendar is not loading - infinite spinner on the Appointments page,False,"A few things to check first:
 
 - Clear the browser cache and hard-refresh the page.
 - Re-select the patient and retry the action.
 
-If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,High,In Progress,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,7.69,2026-09-08T00:13:38+00:00,gemini-flash-latest,False,67,0.167,View / export a service request (17%); View / export a prescription (17%); Schedule module (17%)
+If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,High,In Progress,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,7.69,2026-09-07T11:30:00+00:00,gemini-flash-latest,False,67,0.167,View / export a service request (17%); View / export a prescription (17%); Schedule module (17%)
 JIRA-0025,How to create a service request / referral for lab work,True,"The documentation covers **Service Requests**, but it doesn't spell out this specific configuration. What the docs *do* describe:
 
 1. Navigate to the relevant module.
 2. Set the date and any optional details.
 3. Choose the patient / practitioner from the picker.
 
-You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.63,2026-09-08T00:14:38+00:00,gemini-flash-latest,False,55,0.5,Create a service request (50%); View / export a service request (33%); Service Requests (33%)
+You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.63,2026-09-07T11:31:00+00:00,gemini-flash-latest,False,55,0.5,Create a service request (50%); View / export a service request (33%); Service Requests (33%)
 JIRA-0026,Where do I view a patient's past encounters and notes?,True,"From **Patients (Patient Worklist)** in the documentation:
 
 1. From the sidebar open the relevant module.
 2. Click **Save**.
 3. Set the date and any optional details.
 
-The record appears in the list straight away.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.97,2026-09-08T00:17:38+00:00,gemini-flash-latest,False,54,0.667,Core concepts (67%); Update / end an encounter (50%); Edit vital signs (50%)
+The record appears in the list straight away.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.97,2026-09-07T11:34:00+00:00,gemini-flash-latest,False,54,0.667,Core concepts (67%); Update / end an encounter (50%); Edit vital signs (50%)
 JIRA-0027,How do I edit a patient's demographic details after creation?,True,"The documentation covers **Patients (Patient Worklist)**, but it doesn't spell out this specific configuration. What the docs *do* describe:
 
 1. Open the relevant module.
@@ -159,8 +159,8 @@ JIRA-0027,How do I edit a patient's demographic details after creation?,True,"Th
 3. Click **Save**.
 4. Select **Add** (or **Edit** on an existing record).
 
-You'll likely need a colleague to confirm the rest.",PARTIAL,"On-topic and partly useful, but a staff member would still need to finish or verify it.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.4,2026-09-08T00:20:38+00:00,gemini-flash-latest,False,61,0.5,View / export a prescription (50%); Edit clinical notes (50%); Edit a service request (50%)
-JIRA-0028,Merge two duplicate patient profiles into one,False,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,Requires a billing or subscription action that only an admin can perform.,Service Request,Medium,In Progress,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.29,2026-09-08T00:24:38+00:00,gemini-flash-latest,False,45,0.286,Encounters (Patient Visits) (29%); Create clinical notes (29%); Create an invoice — patient pays upfront (Paid) (29%)
+You'll likely need a colleague to confirm the rest.",PARTIAL,"On-topic and partly useful, but a staff member would still need to finish or verify it.",Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.4,2026-09-07T11:37:00+00:00,gemini-flash-latest,False,61,0.5,View / export a prescription (50%); Edit clinical notes (50%); Edit a service request (50%)
+JIRA-0028,Merge two duplicate patient profiles into one,False,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,Requires a billing or subscription action that only an admin can perform.,Service Request,Medium,In Progress,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.29,2026-09-07T11:41:00+00:00,gemini-flash-latest,False,45,0.286,Encounters (Patient Visits) (29%); Create clinical notes (29%); Create an invoice — patient pays upfront (Paid) (29%)
 JIRA-0029,How to add a diagnosis (ICD code) to an encounter,True,"From **Encounters** in the documentation:
 
 1. From the sidebar open the relevant module.
@@ -168,14 +168,14 @@ JIRA-0029,How to add a diagnosis (ICD code) to an encounter,True,"From **Encount
 3. Select **Add** (or **Edit** on an existing record).
 4. Set the date and any optional details.
 
-The record appears in the list straight away.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.36,2026-09-08T00:28:38+00:00,gemini-flash-latest,False,49,0.6,Create a diagnosis (60%); Core concepts (60%); Uploaded Files (40%)
+The record appears in the list straight away.",FULL,"Correct, specific and self-contained — a workflow could stop here.",Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.36,2026-09-07T11:45:00+00:00,gemini-flash-latest,False,49,0.6,Create a diagnosis (60%); Core concepts (60%); Uploaded Files (40%)
 JIRA-0030,Prescription PDF prints with the wrong clinic address in the header,False,"A few things to check first:
 
 - Try it in a different browser.
 - Check whether the same thing happens on another staff account.
 - Clear the browser cache and hard-refresh the page.
 
-If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,Medium,To Do,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.29,2026-09-08T00:29:38+00:00,gemini-flash-latest,False,67,0.429,Core concepts (43%); View / export a prescription (29%); View / export immunizations (14%)
+If none of that helps, this looks like a defect — please raise it with the support team so an engineer can look at it.",HUMAN,"The bot offered troubleshooting, but resolving this needs an engineer / a decision.",Bug,Medium,To Do,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.29,2026-09-07T11:46:00+00:00,gemini-flash-latest,False,67,0.429,Core concepts (43%); View / export a prescription (29%); View / export immunizations (14%)
 JIRA-0031,How do I set up recurring appointments for a patient?,True,"The documentation covers **Patients (Patient Worklist)**, but it doesn't spell out doing it in bulk. What the docs *do* describe:
 
 1. From the sidebar open the relevant module.
@@ -184,12 +184,12 @@ JIRA-0031,How do I set up recurring appointments for a patient?,True,"The docume
 4. Select **Add** (or **Edit** on an existing record).
 5. Fill in the required fields — the form flags anything missing.
 
-You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.33,2026-09-08T00:33:38+00:00,gemini-flash-latest,False,53,0.75,Schedule module (75%); Create clinical notes (50%); Clinical Notes Templates (50%)
+You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Medium,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,2.33,2026-09-07T11:50:00+00:00,gemini-flash-latest,False,53,0.75,Schedule module (75%); Create clinical notes (50%); Clinical Notes Templates (50%)
 JIRA-0032,Can SugboDoc send SMS reminders to patients? How do I enable it?,True,"The documentation covers **Patients (Patient Worklist)**, but it doesn't spell out the exact option you're describing. What the docs *do* describe:
 
 1. Open the relevant module.
 2. Select **Add** (or **Edit** on an existing record).
 3. Click **Save**.
 
-You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.79,2026-09-08T00:36:38+00:00,gemini-flash-latest,False,64,0.333,Patients (Patient Worklist) (33%); Core concepts (17%); Add a resource classification (17%)
-JIRA-0033,API access - we want to pull appointment data into our own dashboard,False,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,The request needs privileged access or a manual change by staff.,Integration,Medium,In Progress,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.04,2026-09-08T00:38:38+00:00,gemini-flash-latest,False,68,0.25,Core concepts (25%); Update an appointment (12%); Schedule module (12%)
+You'll likely need a colleague to confirm the rest.",PARTIAL,The reply points to the right area but leaves a gap the user can't close alone.,Service Request,Low,Done,False,True,True,draft answer is supported by the documentation,gemini-3.1-flash-lite,,3.79,2026-09-07T11:53:00+00:00,gemini-flash-latest,False,64,0.333,Patients (Patient Worklist) (33%); Core concepts (17%); Add a resource classification (17%)
+JIRA-0033,API access - we want to pull appointment data into our own dashboard,False,I don't have enough information in my records to answer that. Please submit a support ticket.,HUMAN,The request needs privileged access or a manual change by staff.,Integration,Medium,In Progress,True,True,True,"assistant refused, which is allowed",gemini-3.1-flash-lite,,1.04,2026-09-07T11:55:00+00:00,gemini-flash-latest,False,68,0.25,Core concepts (25%); Update an appointment (12%); Schedule module (12%)
