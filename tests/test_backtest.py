@@ -211,6 +211,18 @@ def test_wilson_ci():
     assert m["deflection_ci95_low"] <= m["potential_deflection_rate"] <= m["deflection_ci95_high"]
 
 
+def test_clopper_pearson_ci():
+    # matches scipy.stats.beta.ppf to 4 dp
+    assert bt.clopper_pearson_ci(2, 33) == (0.0074, 0.2023)
+    assert bt.clopper_pearson_ci(0, 20) == (0.0, 0.1684)
+    assert bt.clopper_pearson_ci(20, 20)[1] == 1.0
+    assert bt.clopper_pearson_ci(0, 0) == (0.0, 0.0)
+    # exact interval contains Wilson's (it is wider / more conservative)
+    w_lo, w_hi = bt.wilson_ci(2, 33)
+    e_lo, e_hi = bt.clopper_pearson_ci(2, 33)
+    assert e_lo <= w_lo and e_hi >= w_hi
+
+
 def test_metrics_report_cost_and_latency():
     results = pd.DataFrame({
         "classification": ["FULL", "HUMAN", "HUMAN"],

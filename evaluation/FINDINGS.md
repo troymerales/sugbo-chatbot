@@ -35,9 +35,16 @@ happened.
 | PARTIAL — real help, human still needed | 0 | 0.0% |
 | HUMAN — needs a person | 31 | 93.9% |
 
-**Potential ticket deflection: 6.1%** (2 / 33) — **95% CI 1.7 – 19.6%** (Wilson score
-interval; with only 2 positives in 33 the point estimate is barely informative — treat it
-as "single digits, possibly up to ~20%").
+**Potential ticket deflection: 6.1%** (2 / 33) — **95% CI ≈ 2 – 20%** (Wilson score
+interval 1.7 – 19.6%; Clopper–Pearson exact 0.7 – 20.2%). With only 2 positives in 33 the
+point estimate is barely informative — read it as *"single digits, plausibly up to ~20%."*
+
+> **What the interval does and doesn't cover.** It is binomial **sampling** error only,
+> and it assumes the 33 tickets are a random draw from a population. They are a *filtered
+> convenience sample* (Type ∈ {staff member, admin, doctor, user} of a 50-row export), so
+> even that is a stretch. It says **nothing** about the fact that the FULL/PARTIAL/HUMAN
+> labels come from an unvalidated LLM judge — that uncertainty is likely larger, and it is
+> the manual-validation step (not any CI) that addresses it.
 
 - **31 of 33 chatbot replies were the fixed refusal** ("I don't have enough
   information in my records…"). A refusal is always `HUMAN` by rule, so the
@@ -65,8 +72,9 @@ as "single digits, possibly up to ~20%").
 - **The evaluator is not yet validated against human labels.** `manual_review_
   sample.csv` has 33 rows but no human column filled, so agreement / Cohen's κ
   are unknown. The headline number currently has no independent sanity check.
-- **Small n (33)** with only 2 positives — the 95% Wilson CI is **1.7–19.6%**, so
-  the true rate could plausibly be anywhere in the single digits or the teens.
+- **Small n (33)** with only 2 positives — the 95% CI (Wilson 1.7–19.6%, exact
+  0.7–20.2%) spans single digits to ~20%, and it captures *sampling* error only
+  (see the note under the result).
 - **Knowledge-base drift** — the bot answered from *today's* docs, not the docs as
   they were when each ticket was filed.
 - **`historical_resolved`** is degenerate here (all `Done`); the

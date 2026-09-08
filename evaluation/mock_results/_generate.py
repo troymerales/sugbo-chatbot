@@ -248,6 +248,8 @@ metrics = {
     "potential_deflection_rate": round(full / total, 4),
     "deflection_ci95_low": bt.wilson_ci(full, total)[0],
     "deflection_ci95_high": bt.wilson_ci(full, total)[1],
+    "deflection_ci95_exact_low": bt.clopper_pearson_ci(full, total)[0],
+    "deflection_ci95_exact_high": bt.clopper_pearson_ci(full, total)[1],
     "partial_assistance_rate": round(partial / total, 4),
     "human_required_rate": round(human / total, 4),
     "evaluator_fallback_count": 0,

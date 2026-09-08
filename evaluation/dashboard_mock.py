@@ -239,11 +239,18 @@ def section_tldr(k: dict, metrics: dict, agreement: dict) -> None:
     """One-screen summary: the number, whether it's validated, what it doesn't prove."""
     with st.container(border=True):
         c1, c2, c3 = st.columns([1.1, 1, 1.3])
-        c1.metric("Potential deflection rate", f"{k['deflection']:.1%}",
-                  help="FULL ÷ tickets evaluated")
+        c1.metric(
+            "Potential deflection rate", f"{k['deflection']:.1%}",
+            help="FULL ÷ tickets evaluated. The 95% CI is binomial **sampling** error only "
+                 "— it treats these tickets as a random sample (they are a filtered "
+                 "convenience set) and does **not** account for LLM-evaluator error, which "
+                 "the manual validation section addresses.",
+        )
         lo, hi = metrics.get("deflection_ci95_low"), metrics.get("deflection_ci95_high")
+        elo, ehi = metrics.get("deflection_ci95_exact_low"), metrics.get("deflection_ci95_exact_high")
         if lo is not None and k["total"]:
-            c1.caption(f"{k['full']} of {k['total']} tickets · 95% CI {lo:.1%}–{hi:.1%} (Wilson)")
+            extra = f"; {elo:.1%}–{ehi:.1%} exact" if elo is not None else ""
+            c1.caption(f"{k['full']} of {k['total']} · 95% CI {lo:.1%}–{hi:.1%} Wilson{extra}")
         else:
             c1.caption(f"{k['full']} of {k['total']} tickets")
 

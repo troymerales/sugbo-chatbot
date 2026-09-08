@@ -795,9 +795,9 @@ def compare_verification(with_verify: pd.DataFrame,
 def wilson_ci(successes: int, n: int, *, z: float = 1.959963985) -> tuple[float, float]:
     """Wilson score interval for a binomial proportion (default z = 1.96 → 95%).
 
-    Used for the deflection rate: with n=33 and 2 successes the normal
-    approximation is useless, and this is the standard fix. Returns (low, high),
-    each rounded to 4 dp and clamped to [0, 1].
+    The pragmatic default for a small-n / extreme-p proportion (the deflection
+    rate is 2/33): no impossible values, coverage close to nominal, shorter than
+    the exact interval. Returns (low, high), 4 dp, clamped to [0, 1].
     """
     if n <= 0:
         return (0.0, 0.0)
@@ -809,6 +809,84 @@ def wilson_ci(successes: int, n: int, *, z: float = 1.959963985) -> tuple[float,
     centre = (p + z2 / (2 * n)) / denom
     half = (z / denom) * math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))
     return (round(max(0.0, centre - half), 4), round(min(1.0, centre + half), 4))
+
+
+def _betacf(a: float, b: float, x: float) -> float:
+    """Continued fraction for the incomplete beta (Numerical Recipes `betacf`)."""
+    import math
+
+    fpmin, eps = 1e-30, 3e-12
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < fpmin:
+        d = fpmin
+    d = 1.0 / d
+    h = d
+    for m in range(1, 300):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < fpmin:
+            d = fpmin
+        c = 1.0 + aa / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < fpmin:
+            d = fpmin
+        c = 1.0 + aa / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        de = d * c
+        h *= de
+        if abs(de - 1.0) < eps:
+            break
+    return h
+
+
+def _betai(a: float, b: float, x: float) -> float:
+    """Regularized incomplete beta I_x(a, b) — no scipy dependency."""
+    import math
+
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    lbt = (math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+           + a * math.log(x) + b * math.log(1.0 - x))
+    bt = math.exp(lbt)
+    if x < (a + 1.0) / (a + b + 2.0):
+        return bt * _betacf(a, b, x) / a
+    return 1.0 - bt * _betacf(b, a, 1.0 - x) / b
+
+
+def _beta_ppf(p: float, a: float, b: float) -> float:
+    """Inverse of I_x(a, b) by bisection."""
+    lo, hi = 0.0, 1.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if _betai(a, b, mid) < p:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def clopper_pearson_ci(successes: int, n: int, *, alpha: float = 0.05) -> tuple[float, float]:
+    """Clopper–Pearson *exact* binomial CI (default 95%). Guaranteed ≥ 1−alpha
+    coverage — slightly wider than Wilson, never out of bounds. Returns (low, high),
+    4 dp. No scipy dependency (uses `_beta_ppf`)."""
+    if n <= 0:
+        return (0.0, 0.0)
+    x = successes
+    lo = 0.0 if x == 0 else _beta_ppf(alpha / 2.0, x, n - x + 1)
+    hi = 1.0 if x == n else _beta_ppf(1.0 - alpha / 2.0, x + 1, n - x)
+    return (round(lo, 4), round(hi, 4))
 
 
 def _truthy(series: pd.Series) -> pd.Series:
@@ -836,6 +914,8 @@ def calculate_metrics(results: pd.DataFrame, cfg: BacktestConfig | None = None) 
         "potential_deflection_rate": round(full / total, 4) if total else 0.0,
         "deflection_ci95_low": wilson_ci(full, total)[0],
         "deflection_ci95_high": wilson_ci(full, total)[1],
+        "deflection_ci95_exact_low": clopper_pearson_ci(full, total)[0],
+        "deflection_ci95_exact_high": clopper_pearson_ci(full, total)[1],
         "partial_assistance_rate": round(partial / total, 4) if total else 0.0,
         "human_required_rate": round(human / total, 4) if total else 0.0,
         "evaluator_fallback_count": int(
