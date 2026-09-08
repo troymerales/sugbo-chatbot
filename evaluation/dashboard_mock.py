@@ -42,17 +42,11 @@ CLASS_HELP = {
 }
 
 def _configure_page() -> None:
-    """Page config + a width cap. Called first thing in main() (not at import
-    time) so it also takes effect when dashboard_real.py imports this module."""
+    """Page config. Called first thing in main() (NOT at import time) so it also
+    takes effect when dashboard_real.py imports this module and calls main() —
+    set_page_config run during an import is silently ignored."""
     st.set_page_config(page_title="Jira Chatbot Evaluation", page_icon="📊",
                        layout="wide", initial_sidebar_state="collapsed")
-    # `layout="wide"` gives charts/tables room, but on a large monitor Streamlit
-    # otherwise stretches the content edge to edge — cap it at a readable width.
-    st.markdown(
-        "<style>[data-testid='stMainBlockContainer']{max-width:1240px;margin-inline:auto;}"
-        "</style>",
-        unsafe_allow_html=True,
-    )
 
 
 # --------------------------------------------------------------------------- #
