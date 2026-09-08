@@ -19,7 +19,7 @@ load_secrets()
 
 import streamlit as st  # noqa: E402
 
-from assistant.widget import render_floating_assistant  # noqa: E402
+from assistant.widget import preload_assistant, render_floating_assistant  # noqa: E402
 from stt import notes_db as db  # noqa: E402
 from stt.audio import duration_seconds, read_upload  # noqa: E402
 from stt.config import get_settings  # noqa: E402
@@ -33,6 +33,11 @@ st.set_page_config(page_title="Consultation Transcript", page_icon="🎙️",
 db.init_db()
 settings = get_settings()
 render_shell("consultation-transcript")
+# Claim the floating assistant's stylesheet now, at the top of the run. Otherwise
+# a later st.spinner pauses the script before render_floating_assistant() (at the
+# bottom of the page) is reached, Streamlit drops the not-yet-re-rendered <style>,
+# and the stale FAB collapses to an unstyled rectangle in the page flow.
+preload_assistant()
 
 if "work" not in st.session_state:
     st.session_state.work = {
@@ -79,6 +84,9 @@ if not has_transcript:
     st.caption("Record the consultation in Bisaya/Cebuano — SugboDoc transcribes "
                "it and drafts an English SOAP note. Everything stays editable.")
 
+    transcribe_err = st.session_state.pop("cx_transcribe_error", None)
+    audio_nonce = st.session_state.get("cx_audio_nonce", 0)
+
     _, mid, _ = st.columns([1, 2.4, 1])
     with mid:
         with panel("record"):
@@ -87,8 +95,22 @@ if not has_transcript:
             st.markdown('<p class="sd-rec-sub">Tap the microphone and speak normally '
                         'in Bisaya or Cebuano.</p>', unsafe_allow_html=True)
 
-            recorded = st.audio_input("Record the consultation",
-                                      label_visibility="collapsed")
+            # Wrap the mic + the discard control so CSS can pin the "✕" onto the
+            # audio-input's own play/re-record row (a mic recording has no
+            # built-in clear); bumping the widget key drops the take so the user
+            # can re-record or switch to uploading a file.
+            with st.container(key="sdrec_wrap"):
+                recorded = st.audio_input("Record the consultation",
+                                          label_visibility="collapsed",
+                                          key=f"cx_audio_{audio_nonce}")
+                if recorded is not None:
+                    reset_box = st.container(key="sdrec_reset")
+                    if reset_box.button("✕", key="cx_reset_rec",
+                                        help="Discard this recording"):
+                        st.session_state.pop(f"cx_audio_{audio_nonce}", None)
+                        st.session_state.cx_audio_nonce = audio_nonce + 1
+                        st.rerun()
+
             uploaded = st.file_uploader(
                 "or upload a recording", type=["wav", "mp3", "m4a", "flac", "ogg"],
                 label_visibility="collapsed",
@@ -109,30 +131,43 @@ if not has_transcript:
 
             if not settings.asr_available:
                 st.info("Set `HF_TOKEN` in the app secrets to enable transcription.")
-            do_transcribe = st.button(
+
+            # A placeholder so the click can swap the button for its busy state
+            # in place — same run, no rerun — which keeps the rest of the card
+            # fresh underneath (a rerun-first approach leaves the previous run's
+            # card on screen as a stale duplicate during the ASR wait).
+            btn_slot = st.empty()
+            clicked = btn_slot.container(key="sdbtn_transcribe").button(
                 "Transcribe", type="primary", use_container_width=True,
                 disabled=audio_file is None or not settings.asr_available,
+                key="cx_transcribe",
             )
+            if transcribe_err:
+                st.error(transcribe_err)
 
-    if do_transcribe and audio_file is not None:
+    render_floating_assistant()
+
+    if clicked and audio_file is not None:
+        btn_slot.container(key="sdbtn_busy_transcribe").button(
+            "Transcribing…", type="primary", use_container_width=True,
+            disabled=True, key="cx_transcribe_busy",
+        )
         try:
             from stt.asr import transcribe
 
             data, mime, name = read_upload(audio_file)
-            with st.spinner("Transcribing the recording…"):
-                result = transcribe(data, mime,
-                                    duration_s=duration_seconds(data, name))
+            result = transcribe(data, mime,
+                                duration_s=duration_seconds(data, name))
             work.update(
                 transcript=result.text, audio_filename=name,
                 duration_s=result.duration_s, warnings=result.quality_warnings(),
                 soap=SoapNote().as_sections(), extract={}, review={}, saved_id=None,
             )
             st.session_state.pop("transcript_box", None)
-            st.rerun()
         except Exception as e:  # noqa: BLE001
-            st.error(f"Transcription failed: {e}")
+            st.session_state["cx_transcribe_error"] = f"Transcription failed: {e}"
+        st.rerun()
 
-    render_floating_assistant()
     st.stop()
 
 

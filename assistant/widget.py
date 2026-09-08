@@ -48,7 +48,7 @@ _NOTIFY_JS = """
   var W = window.parent, D = W.document;
   var GREETING = __GREETING__;
   var ANCHOR = ".__ANCHOR__";
-  var HOLD_MS = 2000, FADE_MS = 340;
+  var HOLD_MS = 10000, FADE_MS = 340;
 
   function strip(root) {
     root.querySelectorAll(".sd-greet, .sd-fab-badge").forEach(function (n) { n.remove(); });
@@ -140,6 +140,19 @@ def _greeting() -> str:
     if "asst_greeting" not in ss:
         ss.asst_greeting = random.choice(_GREETINGS)
     return ss.asst_greeting
+
+
+def preload_assistant() -> None:
+    """Inject the widget's stylesheet early in the run.
+
+    ``render_floating_assistant()`` is called at the very bottom of a page, so a
+    ``st.spinner`` higher up pauses the script before its ``styles.inject()`` is
+    reached. Streamlit then drops the not-yet-re-rendered ``<style>`` and the
+    stale floating button loses its ``position:fixed`` rounding, dumping a bare
+    rectangle into the page flow. Claiming the CSS up front avoids that; the
+    second ``inject()`` at render time is a harmless duplicate.
+    """
+    styles.inject()
 
 
 def render_floating_assistant() -> None:

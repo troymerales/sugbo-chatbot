@@ -20,12 +20,25 @@ so there's no `st.navigation` registry dependency.
 
 from __future__ import annotations
 
+import base64
+import functools
 from contextlib import contextmanager
 
 import streamlit as st
 
 import config
 from stt.config import get_settings
+
+
+@functools.lru_cache(maxsize=1)
+def _logo_uri() -> str | None:
+    """The SugboDoc mark (``web/sugbodoc.png``) as a data: URI, so it can go
+    straight into the rail's HTML. Falls back to the lettering mark if missing."""
+    path = config.ROOT / "web" / "sugbodoc.png"
+    try:
+        return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+    except OSError:
+        return None
 
 # --------------------------------------------------------------------------- #
 # Styling — palette + spacing lifted straight from web/dashboard.html
@@ -112,9 +125,13 @@ html, body, [class*="css"]{
   [data-testid="stSidebar"]{ display:none !important; }
 }
 
-.sd-brand{ display:flex; align-items:center; gap:10px; padding:2px 6px 12px; }
-.sd-brand .mark{
-  width:32px;height:32px;border-radius:10px;flex:0 0 32px;
+.sd-brand{ display:flex; align-items:center; gap:9px; padding:2px 6px 12px; }
+.sd-brand .mark{ width:34px; height:34px; flex:0 0 34px; }
+/* provided PNG logo — shown as-is, proportions preserved */
+.sd-brand img.mark{ object-fit:contain; display:block; }
+/* fallback lettering mark, only if the PNG is missing */
+.sd-brand span.mark{
+  border-radius:10px;
   background:linear-gradient(135deg,#2bd4c4,#3b41d6);
   display:grid;place-items:center;color:#fff;font-weight:800;font-size:16px;
   box-shadow:0 4px 12px rgba(59,65,214,.28);
@@ -223,6 +240,17 @@ html, body, [class*="css"]{
   color:var(--sd-indigo) !important; font-weight:700;
 }
 [class*="st-key-sdnavon_"] button{ background:var(--sd-indigo-50) !important; }
+
+/* ---- inert mock rows read as clearly unavailable ----
+   Only the *active* real destination gets the indigo pill (rules above); every
+   real button that isn't the current page keeps its default look. The inert
+   eClinic modules + the feedback row are dimmed so they obviously don't work. */
+.sd-nav a, .sd-nav .sub a, .sd-foot{
+  color:var(--sd-muted) !important; font-weight:500 !important;
+  opacity:.55; cursor:default;
+}
+.sd-nav a .i{ opacity:.4; }
+.sd-nav a:hover{ background:transparent; }
 
 /* ---- top bar (full-bleed via the block-container padding) ---- */
 .sd-topbar{
@@ -504,6 +532,45 @@ html, body, [class*="css"]{
 [class*="st-key-sdpanel_record"] hr{ margin:14px 0 12px; }
 [class*="st-key-sdpanel_record"] [data-testid="stTextInput"] label p{ font-weight:600; }
 
+/* "discard recording" — a small ✕ pinned onto the audio-input's own
+   play / re-record row (only shown once a take exists), vertically centred
+   against the mic, sitting just inside the card's right edge. */
+[class*="st-key-sdrec_wrap"]{ position:relative; }
+[class*="st-key-sdrec_reset"]{
+  position:absolute; top:7px; height:44px; z-index:2;  /* == the play-button row */
+  left:calc(50% + 56px); right:auto;                   /* just past the Play button */
+  display:flex; align-items:center; width:auto !important;
+}
+[class*="st-key-sdrec_reset"] button,
+[class*="st-key-sdrec_reset"] button:hover,
+[class*="st-key-sdrec_reset"] button:active,
+[class*="st-key-sdrec_reset"] button:focus{
+  background:var(--sd-card) !important; border:1px solid var(--sd-line) !important;
+  box-shadow:none !important; border-radius:50% !important;
+  width:30px !important; height:30px !important; min-height:0 !important;
+  padding:0 !important; font-size:13px; line-height:1;
+  color:var(--sd-muted) !important; font-weight:600;
+}
+[class*="st-key-sdrec_reset"] button:hover{
+  border-color:var(--sd-danger) !important; color:var(--sd-danger) !important;
+}
+
+/* Transcribe button while the ASR call runs: it stays full primary-indigo (not
+   the greyed :disabled look) with a spinner set just before the label. */
+[class*="st-key-sdbtn_busy_transcribe"] button:disabled,
+[class*="st-key-sdbtn_busy_transcribe"] button:disabled:hover{
+  background:var(--sd-indigo) !important; border-color:var(--sd-indigo) !important;
+  color:#fff !important; box-shadow:0 2px 8px rgba(59,65,214,.28) !important;
+  opacity:1 !important; cursor:progress;
+  display:flex; align-items:center; justify-content:center; gap:9px;
+}
+[class*="st-key-sdbtn_busy_transcribe"] button:disabled::before{
+  content:""; flex:0 0 14px; width:14px; height:14px; border-radius:50%;
+  border:2px solid rgba(255,255,255,.35); border-top-color:#fff;
+  animation:sd-btn-spin .7s linear infinite;
+}
+@keyframes sd-btn-spin{ to{ transform:rotate(360deg); } }
+
 /* ---- recorded summary strip (after transcription) ---- */
 [class*="st-key-sdpanel_recorded"]{
   padding:12px 16px; display:flex; align-items:center;
@@ -652,11 +719,14 @@ def _mock(icon: str, label: str) -> str:
 # buttons" note in the stylesheet for why they aren't anchors). Each chunk has
 # to be balanced HTML on its own: Streamlit renders every st.markdown call into
 # its own container, so a <div> can't be left open across a button.
-_RAIL_HEAD = (
-    '<div class="sd-brand"><span class="mark">S</span>'
-    "<b>Sugbo<span>Doc</span></b></div>"
-    '<div class="sd-tz">(GMT+08:00) Philippine Time <span>&#9662;</span></div>'
-)
+def _rail_head() -> str:
+    uri = _logo_uri()
+    mark = (f'<img class="mark" src="{uri}" alt="SugboDoc">' if uri
+            else '<span class="mark">S</span>')
+    return (
+        f'<div class="sd-brand">{mark}<b>Sugbo<span>Doc</span></b></div>'
+        '<div class="sd-tz">(GMT+08:00) Philippine Time <span>&#9662;</span></div>'
+    )
 
 _RAIL_MID = (
     '<div class="sd-nav">'
@@ -691,7 +761,7 @@ def _nav_button(slug: str, label: str, active: str | None, *, sub: bool = False)
 
 
 def _render_rail(active: str | None) -> None:
-    st.markdown(_RAIL_HEAD, unsafe_allow_html=True)
+    st.markdown(_rail_head(), unsafe_allow_html=True)
     _nav_button("dashboard", "Dashboard", active)
     st.markdown(_RAIL_MID, unsafe_allow_html=True)
     _nav_button("consultation-transcript", "Consultation Transcript", active)

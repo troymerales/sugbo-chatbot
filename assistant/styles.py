@@ -137,10 +137,10 @@ _CSS_TEMPLATE = """
     color: var(--sda-ink);
     border: 1px solid var(--sda-line);
     border-radius: 14px;
-    font-size: 13.5px;
+    font-size: 15px;
     font-weight: 500;
     line-height: 1.45;
-    box-shadow: 0 12px 32px rgba(31, 36, 48, 0.15), 0 2px 6px rgba(31, 36, 48, 0.06);
+    box-shadow: 0 12px 32px rgba(31, 36, 48, 0.55), 0 2px 6px rgba(31, 36, 48, 0.36);
     pointer-events: none;
     animation: sd-greet-in 0.34s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
