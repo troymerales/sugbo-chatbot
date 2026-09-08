@@ -2,7 +2,8 @@
 #   streamlit_app.py (home + floating assistant), pages/ (Consultation Transcript,
 #   Past Notes, Evaluation), assistant/ (chatbot widget), core/ + stt/.
 # Streamlit Community Cloud installs exactly this file. No torch / transformers —
-# transcription is a hosted call (Gemini multimodal, or the HF Inference API).
+# transcription is a hosted call to ASR_API_URL (the HF Space in
+# deploy/asr-space/). Install `transformers` locally to run Whisper in-process.
 streamlit>=1.37
 google-genai>=1.0
 python-dotenv>=1.0

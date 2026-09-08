@@ -3,9 +3,11 @@ Settings for the STT -> SOAP pipeline. Self-contained: reads only ``os.environ``
 (which ``assistant.bootstrap.load_secrets`` populates from ``st.secrets``), so it
 stays decoupled from the chatbot's root ``config.py``.
 
-Transcription is the fine-tuned Whisper checkpoint via the Hugging Face
-Inference API (no torch, no Gemini). Gemini is used only for the SOAP note /
-extract / review steps.
+Transcription is the fine-tuned Whisper checkpoint. Locally it runs in-process
+(``transformers``); deployed it is a hosted call to ``ASR_API_URL`` — a small
+Hugging Face Space that wraps the same checkpoint (see ``deploy/asr-space/``).
+Either way, no torch on Streamlit Community Cloud. Gemini is used only for the
+SOAP note / extract / review steps.
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ class Settings:
     whisper_model_id: str       # the fine-tuned checkpoint (HF)
     hf_inference_url: str        # base URL for the HF Inference API (override for endpoints)
     hf_token: str | None
+    asr_api_url: str | None      # hosted ASR endpoint (the HF Space); used verbatim
+    asr_auth_token: str | None   # optional bearer token for a private ASR endpoint
     soap_model_id: str          # Gemini model for SOAP / extract / review
     gemini_api_key: str | None
     asr_language: str
@@ -40,8 +44,10 @@ class Settings:
 
     @property
     def asr_available(self) -> bool:
-        """HF token configured — transcription is usable."""
-        return bool(self.hf_token)
+        """Transcription is configured — a hosted ASR endpoint (``ASR_API_URL``)
+        or an HF token. Local ``transformers`` still runs it in-process; this
+        only gates the Transcribe button, and the docs set ``HF_TOKEN`` anyway."""
+        return bool(self.asr_api_url or self.hf_token)
 
 
 @lru_cache(maxsize=1)
@@ -52,6 +58,8 @@ def get_settings() -> Settings:
                           or DEFAULT_HF_INFERENCE_URL).rstrip("/") + "/",
         hf_token=(os.environ.get("HF_TOKEN")
                   or os.environ.get("HUGGINGFACE_TOKEN") or "").strip() or None,
+        asr_api_url=(os.environ.get("ASR_API_URL") or "").strip() or None,
+        asr_auth_token=(os.environ.get("ASR_AUTH_TOKEN") or "").strip() or None,
         soap_model_id=(os.environ.get("BISAYA_SOAP_MODEL_ID")
                        or os.environ.get("GEMINI_MODEL") or DEFAULT_SOAP_MODEL),
         gemini_api_key=(os.environ.get("GEMINI_API_KEY") or "").strip() or None,
