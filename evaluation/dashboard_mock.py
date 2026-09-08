@@ -193,6 +193,12 @@ def bucket(series: pd.Series, edges: list[float], labels: list[str]) -> pd.Serie
 # Sections
 # --------------------------------------------------------------------------- #
 
+#: When True, the Manual Validation section becomes an inline editor that writes
+#: human_evaluation / human_reason back to manual_review_sample.csv. OFF for the
+#: public demo (ephemeral filesystem, and the demo labels are fixed);
+#: dashboard_real.py sets it True for the private local view.
+ALLOW_MANUAL_EDIT: bool = False
+
 #: Disclosure captions shown at the top of the hero. This is the PUBLIC demo
 #: build, so it is populated; dashboard_real.py (git-ignored) clears it.
 DEMO_NOTICE: list[str] = [
@@ -597,11 +603,66 @@ def section_trace(df: pd.DataFrame) -> None:
         st.warning("This verdict is an **evaluator fallback**, not a real judgement.", icon="⚠️")
 
 
+def _manual_editor(manual: pd.DataFrame) -> None:
+    """Inline editor for human_evaluation / human_reason. Persists to
+    manual_review_sample.csv only when the Save button is pressed."""
+    st.markdown("**Label the sample**")
+    st.caption(
+        "Pick a ticket in *Example trace* above to read the full chatbot reply, then set "
+        "**Your label** for it here (the LLM's label + reason are shown for reference). "
+        "Optionally note why, then **Save** — it writes to `manual_review_sample.csv` and "
+        "the stats below recompute."
+    )
+
+    view = manual.copy()
+    he = view.get("human_evaluation", pd.Series("", index=view.index)).astype(str).str.strip().str.upper()
+    view["human_evaluation"] = he.where(he.isin(CLASSES), None)
+    view["human_reason"] = view.get("human_reason", "").astype(str).replace({"nan": ""})
+
+    # editable columns first so "Your label" is always the leftmost visible one
+    show = [c for c in ("human_evaluation", "human_reason", "ticket_id", "summary",
+                        "llm_evaluation", "llm_reason")
+            if c in view.columns]
+    edited = st.data_editor(
+        view[show], key="manual_edit", hide_index=True, width="stretch",
+        num_rows="fixed", height=460,
+        column_config={
+            "human_evaluation": st.column_config.SelectboxColumn(
+                "Your label", options=CLASSES, required=False, width="small"),
+            "human_reason": st.column_config.TextColumn("Your reason", width="medium"),
+            "ticket_id": st.column_config.TextColumn("Ticket", disabled=True, width="small"),
+            "summary": st.column_config.TextColumn("Summary", disabled=True, width="medium"),
+            "llm_evaluation": st.column_config.TextColumn("LLM", disabled=True, width="small"),
+            "llm_reason": st.column_config.TextColumn("LLM reason", disabled=True, width="medium"),
+        },
+    )
+
+    n_set = int(edited["human_evaluation"].notna().sum())
+    b, note = st.columns([1, 3])
+    if b.button(f"💾 Save {n_set} label{'' if n_set == 1 else 's'}", type="primary",
+                key="manual_save"):
+        out = manual.copy()
+        out["human_evaluation"] = edited["human_evaluation"].fillna("").values
+        out["human_reason"] = edited["human_reason"].fillna("").values
+        if "judge_correct" in out.columns:
+            out["judge_correct"] = ""            # recomputed by score_manual_review()
+        path = RESULTS_DIR / "manual_review_sample.csv"
+        out.to_csv(path, index=False)
+        st.cache_data.clear()
+        st.toast(f"Saved {n_set} labels → {path.name}", icon="✅")
+        st.rerun()
+    note.caption("Edits persist in the page until you Save; Save writes them to disk.")
+    st.divider()
+
+
 def section_manual(manual: pd.DataFrame) -> None:
     st.subheader("Manual validation")
     if manual.empty:
         st.info("`manual_review_sample.csv` not found — skipping human-vs-LLM validation.")
         return
+
+    if ALLOW_MANUAL_EDIT:
+        _manual_editor(manual)
 
     n_total = len(manual)
     labelled = manual[manual["human_evaluation"].astype(str).str.strip().str.upper().isin(CLASSES)] \
@@ -613,16 +674,19 @@ def section_manual(manual: pd.DataFrame) -> None:
 
     if labelled.empty:
         c3.metric("Agreement", "—")
-        st.warning(
-            "No human labels in `manual_review_sample.csv` yet. Fill the "
-            "`human_evaluation` column (FULL / PARTIAL / HUMAN) and re-open this page.",
-            icon="✍️",
-        )
-        st.dataframe(
-            manual[[c for c in ("ticket_id", "llm_evaluation", "human_evaluation", "llm_reason")
-                    if c in manual.columns]].head(50),
-            hide_index=True, width="stretch",
-        )
+        if ALLOW_MANUAL_EDIT:
+            st.info("No labels saved yet — use the editor above, then Save.")
+        else:
+            st.warning(
+                "No human labels in `manual_review_sample.csv` yet. Fill the "
+                "`human_evaluation` column (FULL / PARTIAL / HUMAN) and re-open this page.",
+                icon="✍️",
+            )
+            st.dataframe(
+                manual[[c for c in ("ticket_id", "llm_evaluation", "human_evaluation", "llm_reason")
+                        if c in manual.columns]].head(50),
+                hide_index=True, width="stretch",
+            )
         return
 
     try:
