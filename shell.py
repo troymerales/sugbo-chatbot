@@ -234,10 +234,11 @@ html, body, [class*="css"]{
 
 /* active row -- the indigo pill the static mock uses. Must come after the
    sub-level block: both sides are !important at equal specificity, so the
-   later rule wins and an active sub would otherwise stay muted grey. */
+   later rule wins and an active sub would otherwise stay muted grey.
+   Use 600 instead of 700 to reduce visual shift while maintaining emphasis. */
 [class*="st-key-sdnavon_"] button,
 [class*="st-key-sdsubon_"] button{
-  color:var(--sd-indigo) !important; font-weight:700;
+  color:var(--sd-indigo) !important; font-weight:600;
 }
 [class*="st-key-sdnavon_"] button{ background:var(--sd-indigo-50) !important; }
 
