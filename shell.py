@@ -429,8 +429,8 @@ html, body, [class*="css"]{
 [class*="st-key-sdpanel_record"]{
   text-align:center; padding:28px 26px 22px;
 }
-.sd-rec-title{ font-size:17px; font-weight:700; color:var(--sd-ink); margin:0 0 4px; }
-.sd-rec-sub{ font-size:12.8px; color:var(--sd-muted); margin:0 auto 18px; max-width:none; line-height:1.5; }
+.sd-rec-title{ font-size:17px; font-weight:700; color:var(--sd-ink); margin:0 0 4px; text-align:center !important; }
+.sd-rec-sub{ font-size:12.8px; color:var(--sd-muted); margin:0 auto 18px; max-width:none; line-height:1.5; text-align:center !important; }
 
 /* ==================================================================
    st.audio_input — three states, one layout that never jumps.
