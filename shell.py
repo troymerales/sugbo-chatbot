@@ -450,10 +450,12 @@ html, body, [class*="css"]{
 [class*="st-key-sdpanel_record"] [data-testid="stAudioInput"]{
   --sd-mic:96px;
   border:0; background:none; display:flex; justify-content:center;
+  overflow:visible !important;
 }
 [class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] > div{
   flex-direction:column !important; align-items:center !important;
   justify-content:flex-start !important; background:none !important;
+  overflow:visible !important;
   gap:6px; width:100%; padding:0 !important;
   min-height:calc(var(--sd-mic));
 }
