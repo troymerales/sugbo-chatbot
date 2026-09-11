@@ -542,13 +542,15 @@ html, body, [class*="css"]{
 [class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzoneInstructions"]{ display:none !important; }
 [class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button{
   background:none !important; border:0 !important; box-shadow:none !important;
-  padding:0 !important; min-height:0 !important; font-size:0 !important;
-  color:transparent !important; text-indent:-9999px !important;
+  padding:0 !important; min-height:auto !important; height:auto !important;
+  color:transparent !important; font-size:0 !important; width:auto !important;
+  display:inline !important;
 }
 [class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button::after{
   content:"or upload a recording";
   font-size:12.5px; font-weight:500; color:var(--sd-muted);
   text-decoration:underline; text-underline-offset:2px;
+  display:inline !important;
 }
 [class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button:hover::after{ color:var(--sd-indigo); }
 [data-testid="stMain"] [data-testid="stFileUploaderFile"]{ font-size:12.5px; padding:4px 0; }
