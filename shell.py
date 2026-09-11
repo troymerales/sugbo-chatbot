@@ -454,8 +454,8 @@ html, body, [class*="css"]{
 [class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] > div{
   flex-direction:column !important; align-items:center !important;
   justify-content:flex-start !important; background:none !important;
-  gap:10px; width:100%; padding:0 !important;
-  min-height:calc(var(--sd-mic) + 22px);
+  gap:6px; width:100%; padding:0 !important;
+  min-height:calc(var(--sd-mic));
 }
 [class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] > div > *{ margin:0 !important; }
 [class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] [data-testid="stElementToolbar"]{ display:none !important; }
@@ -464,7 +464,7 @@ html, body, [class*="css"]{
    the mic (and the stop square) lands dead centre whatever state we're in */
 [class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] *:has(> [data-testid="stAudioInputActionButton"]),
 [class*="st-key-sdpanel_record"] [data-testid="stAudioInput"] *:has(> * > [data-testid="stAudioInputActionButton"]){
-  margin:0 !important; padding:0 !important; gap:14px;
+  margin:0 !important; padding:0 !important; gap:6px !important;
   display:flex !important; align-items:center !important; justify-content:center !important;
   width:auto !important; height:auto !important;
 }
@@ -550,7 +550,7 @@ html, body, [class*="css"]{
   content:"or upload a recording";
   font-size:12.5px; font-weight:500; color:var(--sd-muted);
   text-decoration:underline; text-underline-offset:2px;
-  display:inline !important;
+  display:block !important; margin-top:-4px;
 }
 [class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button:hover::after{ color:var(--sd-indigo); }
 [data-testid="stMain"] [data-testid="stFileUploaderFile"]{ font-size:12.5px; padding:4px 0; }
