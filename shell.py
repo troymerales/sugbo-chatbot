@@ -235,21 +235,23 @@ html, body, [class*="css"]{
 /* active row -- the indigo pill the static mock uses. Must come after the
    sub-level block: both sides are !important at equal specificity, so the
    later rule wins and an active sub would otherwise stay muted grey.
-   The background pill can cause Streamlit to center content, so force
-   text-align:left to keep text hugged left like inactive buttons. */
+   Apply text-align:left to ALL nav buttons (active and inactive) to prevent
+   Streamlit's centering behavior. */
+[class*="st-key-sdnav_"] button,
 [class*="st-key-sdnavon_"] button,
-[class*="st-key-sdsubon_"] button{
-  color:var(--sd-indigo) !important; font-weight:700;
-}
-[class*="st-key-sdnavon_"] button,
+[class*="st-key-sdsub_"] button,
 [class*="st-key-sdsubon_"] button{
   text-align:left !important;
 }
+[class*="st-key-sdnav_"] button > div,
 [class*="st-key-sdnavon_"] button > div,
+[class*="st-key-sdsub_"] button > div,
 [class*="st-key-sdsubon_"] button > div{
   justify-content:flex-start !important;
 }
+[class*="st-key-sdnav_"] button p,
 [class*="st-key-sdnavon_"] button p,
+[class*="st-key-sdsub_"] button p,
 [class*="st-key-sdsubon_"] button p{
   text-align:left !important;
   margin:0 !important;
@@ -257,6 +259,10 @@ html, body, [class*="css"]{
 [class*="st-key-sdnavon_"],
 [class*="st-key-sdsubon_"]{
   background:var(--sd-indigo-50) !important;
+}
+[class*="st-key-sdnavon_"] button,
+[class*="st-key-sdsubon_"] button{
+  color:var(--sd-indigo) !important; font-weight:700;
 }
 
 /* ---- inert mock rows read as clearly unavailable ----
