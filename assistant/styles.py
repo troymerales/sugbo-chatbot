@@ -291,6 +291,9 @@ _CSS_TEMPLATE = """
     border: 1px solid var(--sda-line);
     border-radius: 14px 14px 14px 4px;
     color: var(--sda-ink-2);
+    flex-grow: 0;
+    max-width: 85%;
+    margin: 0 !important;
 }
 /* user: indigo, right-aligned, tail on the right */
 .PANEL_CLS [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
@@ -409,10 +412,11 @@ _CSS_TEMPLATE = """
    Fills the gap between "send" and the model's first streamed token; without
    it the bubble sits empty and the widget reads as hung. */
 .sd-typing {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 5px;
     padding: 4px 2px;
+    width: fit-content;
 }
 .sd-typing span {
     width: 7px;

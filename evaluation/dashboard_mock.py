@@ -404,6 +404,7 @@ def _render_ticket(row: pd.Series) -> None:
     cls = row["classification"]
     color = CLASS_COLOR.get(cls, "#6b7280")
     is_fallback = bool(row.get("evaluator_fallback", False))
+    refused = bool(_to_bool(row.get("chatbot_refused")))
 
     st.markdown(
         f"<div style='border-left:4px solid {color};padding:.2rem .9rem;margin:.4rem 0'>"
@@ -415,51 +416,67 @@ def _render_ticket(row: pd.Series) -> None:
         unsafe_allow_html=True,
     )
 
-    st.markdown("**Original ticket**")
-    st.write(row["summary"])
-    meta = {c: row[c] for c in ("issue_type", "Type", "Type_norm", "historical_status",
-                                "historical_resolved", "summary_length") if c in row.index}
-    if meta:
-        st.caption(" · ".join(f"{k}: `{v}`" for k, v in meta.items()))
+    with st.expander("Ticket details", expanded=True):
+        st.markdown("**Original ticket summary**")
+        st.code(str(row["summary"]), language="text", wrap_lines=True)
+        meta = {c: row[c] for c in ("issue_type", "Type", "Type_norm", "historical_status",
+                                    "historical_resolved", "summary_length") if c in row.index}
+        if meta:
+            st.caption(" · ".join(f"{k}: `{v}`" for k, v in meta.items()))
 
-    st.markdown("**Retrieved documentation**")
-    if row.get("nearest_doc_sections"):
-        st.write(row["nearest_doc_sections"])
-        st.caption(
-            "Lexical overlap only — production runs full-context (no retrieval step). "
-            f"`grounding_reason`: {row.get('grounding_reason', '—')}"
-        )
-    else:
-        st.caption(
-            "Production runs full-context (`USE_RAG=off`) — there is no per-ticket "
-            f"retrieval record. Grounding-pass note: {row.get('grounding_reason', '—')}"
+        st.markdown("**Chatbot response**")
+        resp = str(row.get("chatbot_response", "")).strip()
+        err = str(row.get("chatbot_error", "")).strip()
+        if err:
+            st.error(f"Chatbot errored: {err}")
+        elif not resp:
+            st.info("No response recorded.")
+        else:
+            (st.warning if refused else st.info)(resp)
+            if refused:
+                st.caption("This is the fixed refusal reply — the bot found nothing in the docs.")
+        st.caption(f"refused: `{refused}`  ·  grounding pass: {row.get('grounding_reason', '—')}")
+
+    with st.expander("Chatbot prompts & reasoning"):
+        try:
+            from core import knowledge
+            sys_len = len(knowledge.system_prompt())
+            persona = knowledge.PERSONA.strip()
+        except Exception:  # noqa: BLE001
+            sys_len, persona = 0, "You are the SugboDoc support assistant. Answer only from the docs."
+
+        st.caption("**System prompt + chatbot input**")
+        st.code(
+            f"SYSTEM:\n{persona}\n\n"
+            f"===== SUGBODOC DOCUMENTATION =====\n"
+            f"[the full product documentation — {sys_len:,} characters — is inlined here; "
+            f"production runs full-context, no retrieval step]\n"
+            f"===== END DOCUMENTATION =====\n\n"
+            f"USER:\n{row['summary']}",
+            language="text", wrap_lines=True,
         )
 
-    st.markdown("**Chatbot response**")
-    resp = str(row.get("chatbot_response", "")).strip()
-    err = str(row.get("chatbot_error", "")).strip()
-    if err:
-        st.error(f"Chatbot errored: {err}")
-    elif not resp:
-        st.info("No response recorded.")
-    else:
-        (st.warning if bool(row.get("chatbot_refused")) else st.info)(resp)
-        if bool(row.get("chatbot_refused")):
-            st.caption("This is the fixed refusal reply — the bot found nothing in the docs.")
+        st.caption("**Retrieved documentation** (if using RAG)")
+        if row.get("nearest_doc_sections"):
+            st.code(str(row["nearest_doc_sections"]), language="text", wrap_lines=True)
+        else:
+            st.caption("Production runs full-context (no retrieval step)")
 
-    st.markdown("**Evaluation**")
-    ec1, ec2 = st.columns([1, 3])
-    ec1.metric("Classification", cls)
-    ec2.write(row.get("evaluation_reason", "—"))
-    if is_fallback:
-        st.warning(
-            "This classification came from the **fallback mechanism** (empty response, or "
-            "the evaluator returned invalid output twice → defaulted to HUMAN). "
-            "It is not a genuine evaluator judgement.", icon="⚠️",
+    with st.expander("Evaluator verdict"):
+        st.caption("**Evaluator system + input**")
+        ev_user = bt._EVAL_USER_TEMPLATE.format(
+            summary=row["summary"], response=row.get("chatbot_response", ""))
+        st.code(f"SYSTEM:\n{bt.EVALUATOR_SYSTEM.strip()}\n\nUSER:\n{ev_user}",
+                language="text", wrap_lines=True)
+
+        st.caption("**Evaluator output**")
+        st.code(
+            json.dumps({"classification": cls,
+                        "reason": str(row.get("evaluation_reason", ""))}, indent=2),
+            language="json",
         )
-    ev_model = row.get("evaluator_model")
-    if ev_model:
-        st.caption(f"evaluator model: `{ev_model}`")
+        if is_fallback:
+            st.warning("This verdict is an **evaluator fallback**, not a real judgement.", icon="⚠️")
 
 
 def section_failure_analysis(df: pd.DataFrame) -> None:
@@ -560,62 +577,6 @@ def section_failure_analysis(df: pd.DataFrame) -> None:
                 st.success("No fallback rows — every classification is a real evaluator result.")
         else:
             st.info("`evaluator_fallback` column not present.")
-
-
-def section_trace(df: pd.DataFrame) -> None:
-    st.subheader("Example trace — one ticket, end to end")
-    st.caption("Exactly what each model received and produced. Nothing hidden: the chatbot "
-               "is the production pipeline, the evaluator is a separate model that never "
-               "sees the historical outcome.")
-
-    ids = df["ticket_id"].astype(str).tolist()
-    default_ix = 0
-    answered = df[df["chatbot_refused"].map(_to_bool) == False]  # noqa: E712
-    if not answered.empty:
-        default_ix = ids.index(str(answered.iloc[0]["ticket_id"]))
-    pick = st.selectbox("Ticket", ids, index=default_ix, key="trace_pick")
-    row = df[df["ticket_id"].astype(str) == pick].iloc[0]
-    refused = bool(_to_bool(row.get("chatbot_refused")))
-
-    st.markdown("**1 · Ticket summary** — the only input the chatbot receives")
-    st.code(str(row["summary"]), language="text", wrap_lines=True)
-
-    try:
-        from core import knowledge
-        sys_len = len(knowledge.system_prompt())
-        persona = knowledge.PERSONA.strip()
-    except Exception:  # noqa: BLE001
-        sys_len, persona = 0, "You are the SugboDoc support assistant. Answer only from the docs."
-    with st.expander("2 · Prompt sent to the chatbot"):
-        st.code(
-            f"SYSTEM:\n{persona}\n\n"
-            f"===== SUGBODOC DOCUMENTATION =====\n"
-            f"[the full product documentation — {sys_len:,} characters — is inlined here; "
-            f"production runs full-context, no retrieval step]\n"
-            f"===== END DOCUMENTATION =====\n\n"
-            f"USER:\n{row['summary']}",
-            language="text", wrap_lines=True,
-        )
-
-    st.markdown("**3 · Chatbot response** — rendered as the user would see it")
-    with st.container(border=True):
-        st.markdown(str(row.get("chatbot_response", "")) or "_(no response)_")
-    st.caption(f"refused: `{refused}`  ·  grounding pass: {row.get('grounding_reason', '—')}")
-
-    with st.expander("4 · Prompt sent to the evaluator (separate model)"):
-        ev_user = bt._EVAL_USER_TEMPLATE.format(
-            summary=row["summary"], response=row.get("chatbot_response", ""))
-        st.code(f"SYSTEM:\n{bt.EVALUATOR_SYSTEM.strip()}\n\nUSER:\n{ev_user}",
-                language="text", wrap_lines=True)
-
-    st.markdown("**5 · Evaluator verdict**")
-    st.code(
-        json.dumps({"classification": row["classification"],
-                    "reason": str(row.get("evaluation_reason", ""))}, indent=2),
-        language="json",
-    )
-    if bool(_to_bool(row.get("evaluator_fallback"))):
-        st.warning("This verdict is an **evaluator fallback**, not a real judgement.", icon="⚠️")
 
 
 def _manual_editor(manual: pd.DataFrame) -> None:
@@ -847,8 +808,6 @@ def main() -> None:
     section_explorer(df)
     st.divider()
     section_failure_analysis(df)
-    st.divider()
-    section_trace(df)
     st.divider()
     section_manual(manual)
     st.divider()

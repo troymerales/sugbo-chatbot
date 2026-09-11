@@ -83,8 +83,6 @@ def _load_pipeline():
         _pipe = pipeline(
             "automatic-speech-recognition",
             model=MODEL_ID,
-            chunk_length_s=30,
-            stride_length_s=5,
         )
 
         return _pipe
