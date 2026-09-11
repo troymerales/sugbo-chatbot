@@ -241,16 +241,21 @@ html, body, [class*="css"]{
 [class*="st-key-sdsubon_"] button{
   color:var(--sd-indigo) !important; font-weight:700;
 }
-[class*="st-key-sdnavon_"] button{
-  background:var(--sd-indigo-50) !important;
-  text-align:left !important;
-  display:flex !important;
-  justify-content:flex-start !important;
-}
+[class*="st-key-sdnavon_"] button,
 [class*="st-key-sdsubon_"] button{
   text-align:left !important;
-  display:flex !important;
+}
+[class*="st-key-sdnavon_"] button > div,
+[class*="st-key-sdsubon_"] button > div{
   justify-content:flex-start !important;
+}
+[class*="st-key-sdnavon_"] button p,
+[class*="st-key-sdsubon_"] button p{
+  text-align:left !important;
+  margin:0 !important;
+}
+[class*="st-key-sdnavon_"]{
+  background:var(--sd-indigo-50) !important;
 }
 
 /* ---- inert mock rows read as clearly unavailable ----
