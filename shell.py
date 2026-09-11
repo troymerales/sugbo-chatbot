@@ -244,9 +244,13 @@ html, body, [class*="css"]{
 [class*="st-key-sdnavon_"] button{
   background:var(--sd-indigo-50) !important;
   text-align:left !important;
+  display:flex !important;
+  justify-content:flex-start !important;
 }
 [class*="st-key-sdsubon_"] button{
   text-align:left !important;
+  display:flex !important;
+  justify-content:flex-start !important;
 }
 
 /* ---- inert mock rows read as clearly unavailable ----
