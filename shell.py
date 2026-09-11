@@ -235,12 +235,19 @@ html, body, [class*="css"]{
 /* active row -- the indigo pill the static mock uses. Must come after the
    sub-level block: both sides are !important at equal specificity, so the
    later rule wins and an active sub would otherwise stay muted grey.
-   Use 600 instead of 700 to reduce visual shift while maintaining emphasis. */
+   The background pill can cause Streamlit to center content, so force
+   text-align:left to keep text hugged left like inactive buttons. */
 [class*="st-key-sdnavon_"] button,
 [class*="st-key-sdsubon_"] button{
-  color:var(--sd-indigo) !important; font-weight:600;
+  color:var(--sd-indigo) !important; font-weight:700;
 }
-[class*="st-key-sdnavon_"] button{ background:var(--sd-indigo-50) !important; }
+[class*="st-key-sdnavon_"] button{
+  background:var(--sd-indigo-50) !important;
+  text-align:left !important;
+}
+[class*="st-key-sdsubon_"] button{
+  text-align:left !important;
+}
 
 /* ---- inert mock rows read as clearly unavailable ----
    Only the *active* real destination gets the indigo pill (rules above); every

@@ -37,3 +37,5 @@ __pycache__/
 *.db
 soap_notes.db
 logs/
+
+error.png
