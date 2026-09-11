@@ -543,6 +543,7 @@ html, body, [class*="css"]{
 [class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button{
   background:none !important; border:0 !important; box-shadow:none !important;
   padding:0 !important; min-height:0 !important; font-size:0 !important;
+  color:transparent !important; text-indent:-9999px !important;
 }
 [class*="st-key-sdpanel_record"] [data-testid="stFileUploaderDropzone"] button::after{
   content:"or upload a recording";
