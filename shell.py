@@ -254,7 +254,8 @@ html, body, [class*="css"]{
   text-align:left !important;
   margin:0 !important;
 }
-[class*="st-key-sdnavon_"]{
+[class*="st-key-sdnavon_"],
+[class*="st-key-sdsubon_"]{
   background:var(--sd-indigo-50) !important;
 }
 
