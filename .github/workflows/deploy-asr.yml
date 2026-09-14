@@ -5,21 +5,27 @@ on:
     branches: [main]
     paths:
       - 'deploy/asr-space/**'
+      - '.github/workflows/deploy-asr.yml'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
       - name: Push to HF Spaces
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
         run: |
-          git clone https://huggingface.co/spaces/troymerales/sugbodoc-asr ./hf-space
-          cp -r deploy/asr-space/* ./hf-space/
-          cd ./hf-space
+          mkdir -p hf-space
+          git clone https://huggingface.co/spaces/${HF_USERNAME}/sugbodoc-demo hf-space
+          cp -r deploy/asr-space/* hf-space/
+          cd hf-space
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
           git add .
           git commit -m "Auto-deploy from GitHub" || true
-          git push https://oauth2:${HF_TOKEN}@huggingface.co/spaces/troymerales/sugbodoc-asr main
+          git push https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/sugbodoc-demo main
