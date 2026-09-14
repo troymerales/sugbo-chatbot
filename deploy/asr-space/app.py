@@ -57,11 +57,12 @@ demo = gr.Interface(
     description=f"Powered by {MODEL_ID}",
 )
 
-# Wrap in FastAPI to add the /transcribe endpoint for Streamlit
-app = gr.mount_gradio_app(FastAPI(), demo, path="/")
+# Create FastAPI app and mount Gradio
+fast_app = FastAPI()
+app = gr.mount_gradio_app(fast_app, demo, path="/")
 
 
-@app.post("/transcribe")
+@fast_app.post("/transcribe")
 async def transcribe_endpoint(request):
     """API endpoint for raw audio bytes (used by Streamlit)."""
     audio = await request.body()
