@@ -53,7 +53,6 @@ demo = gr.Interface(
     outputs=gr.Textbox(label="Transcript"),
     title="Bisaya/Cebuano Speech-to-Text",
     description=f"Powered by {MODEL_ID}",
-    allow_flagging="never",
 )
 
 if __name__ == "__main__":
