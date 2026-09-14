@@ -23,4 +23,4 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY --chown=user . .
 
 EXPOSE 7860
-CMD ["python", "app.py"]
+CMD ["python", "-m", "gradio_cli", "run", "app.py", "--server-name", "0.0.0.0", "--server-port", "7860"]

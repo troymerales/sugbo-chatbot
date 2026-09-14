@@ -254,6 +254,14 @@ def _transcribe_via_api(
         headers = {"Content-Type": content_type, "Accept": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
+
+        # Detect if it's a Gradio Space (HF Spaces)
+        is_gradio_space = ".hf.space" in url
+        if is_gradio_space:
+            # For Gradio API, use /api/predict/ and wrap audio in JSON
+            url = url.rstrip("/").replace("/api/predict", "") + "/api/predict"
+            headers["Content-Type"] = "application/json"
+
         source = "ASR endpoint"
     elif s.hf_token:
         url = s.hf_inference_url.rstrip("/") + "/" + s.whisper_model_id
@@ -273,8 +281,18 @@ def _transcribe_via_api(
     last_detail = "no response"
     for attempt in range(_API_MAX_ATTEMPTS):
         try:
-            resp = requests.post(url, headers=headers, data=audio_bytes,
-                                 timeout=_API_TIMEOUT_S)
+            # For Gradio Space, send as JSON with base64-encoded audio
+            if is_gradio_space:
+                import base64
+                import json
+                audio_b64 = base64.b64encode(audio_bytes).decode()
+                payload = json.dumps({"data": [f"data:audio/wav;base64,{audio_b64}"]})
+                resp = requests.post(url, headers=headers, data=payload,
+                                     timeout=_API_TIMEOUT_S)
+            else:
+                # For FastAPI endpoints, send raw bytes
+                resp = requests.post(url, headers=headers, data=audio_bytes,
+                                     timeout=_API_TIMEOUT_S)
         except requests.RequestException as e:
             last_detail = f"request error: {e}"
             time.sleep(min(3 * (attempt + 1), _API_COLD_WAIT_CAP_S))
@@ -296,7 +314,7 @@ def _transcribe_via_api(
                 f"{source} returned {resp.status_code}: {resp.text[:300]}"
             )
 
-        text, ok = _parse_api_text(resp)
+        text, ok = _parse_api_text(resp, is_gradio_space=is_gradio_space)
         if not ok:
             last_detail = "non-JSON response (endpoint still starting?)"
             time.sleep(_API_COLD_WAIT_CAP_S)
@@ -314,17 +332,27 @@ def _transcribe_via_api(
     )
 
 
-def _parse_api_text(resp) -> tuple[str, bool]:
+def _parse_api_text(resp, is_gradio_space=False) -> tuple[str, bool]:
     """``(text, ok)`` from an ASR response.
 
-    ``{"text": "..."}`` (our Space) or a one-element list of the same (some HF
-    pipelines). ``ok`` is False when the body isn't JSON at all — usually a
-    Space that hasn't finished booting.
+    For Gradio Spaces: ``{"data": ["transcript text"]}``
+    For FastAPI endpoints: ``{"text": "transcript text"}``
+    ``ok`` is False when the body isn't JSON at all — usually a Space that hasn't finished booting.
     """
     try:
         body = resp.json()
     except Exception:  # noqa: BLE001
         return "", False
+
+    if is_gradio_space:
+        # Gradio returns {"data": [result]}
+        if isinstance(body, dict) and "data" in body:
+            data = body.get("data", [])
+            if isinstance(data, list) and data:
+                return str(data[0]).strip(), True
+        return "", True
+
+    # FastAPI format: {"text": "..."}
     if isinstance(body, list) and body:
         body = body[0]
     if isinstance(body, dict):
