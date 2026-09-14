@@ -2,7 +2,7 @@
 # free Space build limits.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.13.0
-transformers==4.44.2
-accelerate==0.33.0
+transformers>=4.45.0
+accelerate>=0.30.0
 librosa==0.10.2.post1
 soundfile==0.12.1
