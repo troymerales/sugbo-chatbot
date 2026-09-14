@@ -22,9 +22,5 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY --chown=user . .
 
-# Warm the model into the image layer so the first request isn't a cold download.
-RUN python -c "from transformers import pipeline; \
-    pipeline('automatic-speech-recognition', model='troxyz1268/whisper-small-bisaya')"
-
 EXPOSE 7860
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
