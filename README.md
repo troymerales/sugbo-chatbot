@@ -1,6 +1,6 @@
 # SugboDoc
 
-[![CI](https://github.com/troymerales/sugbo-chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/troymerales/sugbo-chatbot/actions/workflows/ci.yml)
+![CI](https://github.com/troymerales/sugbo-chatbot/actions/workflows/ci.yml/badge.svg)
 
 A pure-Streamlit multipage app for clinic consulting. Combines a documentation-grounded support chatbot with an Bisaya/Cebuano speech-to-text workflow that generates structured clinical notes.
 
@@ -16,16 +16,21 @@ A pure-Streamlit multipage app for clinic consulting. Combines a documentation-g
 
 Streamlit-only (no backend server or container). All interaction is client-side; conversation logs optionally persist to Supabase. The app is two independent libraries:
 
-- **`core/`** — Chatbot pipeline (knowledge retrieval, LLM interface, grounding, Jira ticketing)
-- **`stt/`** — STT→SOAP workflow (transcription, note generation, extraction, review, persistence)
+- `core/` — Chatbot pipeline (knowledge retrieval, LLM interface, grounding, Jira ticketing)
+- `stt/` — STT→SOAP workflow (transcription, note generation, extraction, review, persistence)
 
-Both use Gemini for LLM operations and support a deterministic offline mock backend for testing.
+Both use Gemini for LLM operations and support a deterministic offline mock backend for testing
 
 ## Installation & Quick Start
 
+
+
 ### Prerequisites
+
 - Python 3.11+
 - `pip`
+
+
 
 ### Local Development
 
@@ -46,29 +51,35 @@ streamlit run streamlit_app.py
 LLM_BACKEND=mock streamlit run streamlit_app.py
 ```
 
+
+
 ## Configuration
 
 Settings are read from environment variables (set in `.streamlit/secrets.toml` on Streamlit Community Cloud, or `.env` locally). Key variables:
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `GEMINI_API_KEY` | — | **Required** for chatbot answers and SOAP generation. Without it, those features are disabled; mock mode still works. |
-| `ASR_API_URL` | — | **Deployed transcription.** HTTP endpoint wrapping the Whisper checkpoint. See [deploy/asr-space/DEPLOY.md](deploy/asr-space/DEPLOY.md). |
-| `ASR_AUTH_TOKEN` | — | Bearer token for a private ASR endpoint (optional if ASR_API_URL is public). |
-| `HF_TOKEN` | — | **Local/fallback transcription.** Hugging Face API token if using the (slower) serverless Inference API. Ignored if `transformers` is installed locally. |
-| `LLM_BACKEND` | `gemini` | `mock` = deterministic offline mode (no keys, no quota, canned responses). Useful for demos and testing. |
-| `VERIFY_ANSWERS` | `1` | `0` = skip the chatbot's second-pass verification (costs 1 Gemini call/question). |
-| `USE_RAG` | `0` | `1` = retrieve and inject doc sections into answer prompts. |
-| `RAG_TOP_K` | `6` | Number of doc sections to retrieve per question (only if `USE_RAG=1`). |
-| `DATABASE_URL` | — | Supabase connection string (Session pooler). Chat logs persist to `chat_logs` table. Without it, logs go to local JSONL. |
-| `JIRA_*` | — | Jira Cloud credentials for ticket creation. Omit to disable ticketing. |
-| `BISAYA_WHISPER_MODEL_ID` | `troxyz1268/whisper-small-bisaya` | HuggingFace checkpoint ID for the fine-tuned Whisper model. |
-| `GEMINI_MODEL` | `gemini-3.6-flash` | LLM model for chatbot answers and SOAP generation. |
-| `BISAYA_DB_PATH` | `soap_notes.db` | SQLite file for storing SOAP notes (local only; Streamlit Community Cloud instance wipes it on reboot). |
+
+| Variable                  | Default                           | Purpose                                                                                                                                                  |
+| ------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`          | —                                 | **Required** for chatbot answers and SOAP generation. Without it, those features are disabled; mock mode still works.                                    |
+| `ASR_API_URL`             | —                                 | **Deployed transcription.** HTTP endpoint wrapping the Whisper checkpoint. See [deploy/asr-space/DEPLOY.md](deploy/asr-space/DEPLOY.md).                 |
+| `ASR_AUTH_TOKEN`          | —                                 | Bearer token for a private ASR endpoint (optional if ASR_API_URL is public).                                                                             |
+| `HF_TOKEN`                | —                                 | **Local/fallback transcription.** Hugging Face API token if using the (slower) serverless Inference API. Ignored if `transformers` is installed locally. |
+| `LLM_BACKEND`             | `gemini`                          | `mock` = deterministic offline mode (no keys, no quota, canned responses). Useful for demos and testing.                                                 |
+| `VERIFY_ANSWERS`          | `1`                               | `0` = skip the chatbot's second-pass verification (costs 1 Gemini call/question).                                                                        |
+| `USE_RAG`                 | `0`                               | `1` = retrieve and inject doc sections into answer prompts.                                                                                              |
+| `RAG_TOP_K`               | `6`                               | Number of doc sections to retrieve per question (only if `USE_RAG=1`).                                                                                   |
+| `DATABASE_URL`            | —                                 | Supabase connection string (Session pooler). Chat logs persist to `chat_logs` table. Without it, logs go to local JSONL.                                 |
+| `JIRA_*`                  | —                                 | Jira Cloud credentials for ticket creation. Omit to disable ticketing.                                                                                   |
+| `BISAYA_WHISPER_MODEL_ID` | `troxyz1268/whisper-small-bisaya` | HuggingFace checkpoint ID for the fine-tuned Whisper model.                                                                                              |
+| `GEMINI_MODEL`            | `gemini-3.6-flash`                | LLM model for chatbot answers and SOAP generation.                                                                                                       |
+| `BISAYA_DB_PATH`          | `soap_notes.db`                   | SQLite file for storing SOAP notes (local only; Streamlit Community Cloud instance wipes it on reboot).                                                  |
+
 
 See `.env.example` and `.streamlit/secrets.toml.example` for complete, commented templates.
 
 ## Deployment
+
+
 
 ### Streamlit Community Cloud (Free)
 
@@ -96,6 +107,8 @@ For local development, install `transformers` + `torch` to run Whisper in-proces
 pip install transformers torch librosa soundfile
 # ASR will use local Whisper instead of the HTTP endpoint
 ```
+
+
 
 ## Project Structure
 
@@ -161,6 +174,8 @@ trial/                           Bisaya audio clips + transcription references (
 tests/                           109 pytest tests (mock backend, isolated fixtures)
 ```
 
+
+
 ## Testing
 
 All tests are offline (mock backend, no API keys needed):
@@ -171,15 +186,19 @@ pytest -v              # Verbose output
 pytest tests/test_bot.py::TestBotAndGrounding::test_something  # Single test
 ```
 
+
+
 ## Evaluation Results
 
 A backtest across 33 historical Jira tickets showed:
 
-| Metric | Value | CI (95%) |
-|---|---|---|
-| Potential deflection rate | 6.1% (2/33 FULL) | Wilson: 1.7–19.6% |
-| | | Clopper–Pearson: 0.7–20.2% |
-| Evaluator vs. human agreement | — | (not validated against real humans; LLM-judge error not quantified) |
+
+| Metric                        | Value            | CI (95%)                                                            |
+| ----------------------------- | ---------------- | ------------------------------------------------------------------- |
+| Potential deflection rate     | 6.1% (2/33 FULL) | Wilson: 1.7–19.6%                                                   |
+|                               |                  | Clopper–Pearson: 0.7–20.2%                                          |
+| Evaluator vs. human agreement | —                | (not validated against real humans; LLM-judge error not quantified) |
+
 
 See `evaluation/FINDINGS.md` for methodology, limitations, and next steps.
 
@@ -191,6 +210,8 @@ See `evaluation/FINDINGS.md` for methodology, limitations, and next steps.
 - **Jira ticketing** requires live credentials; it's optional and can be omitted.
 - **SOAP notes** are stored in ephemeral SQLite on Streamlit Community Cloud unless a volume is mounted.
 
+
+
 ## Future Improvements
 
 - Replace in-process FAISS with a persistent vector DB (Supabase `pgvector`, Weaviate, etc.)
@@ -199,6 +220,8 @@ See `evaluation/FINDINGS.md` for methodology, limitations, and next steps.
 - Build a real-human evaluation set to quantify LLM-judge bias
 - Support streaming transcription (real-time captions)
 - Add conversation export (PDF, DOCX)
+
+
 
 ## License
 
@@ -213,3 +236,4 @@ MIT
 - **RAG** — Retrieval-Augmented Generation (inject retrieved docs into the LLM prompt)
 - **FAISS** — Meta's approximate nearest-neighbor search library (used for doc retrieval)
 - **Jira dedup** — Avoid creating duplicate tickets for the same issue
+
