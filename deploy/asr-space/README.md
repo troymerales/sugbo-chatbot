@@ -3,7 +3,7 @@ title: SugboDoc Whisper Bisaya ASR
 emoji: 🎙️
 colorFrom: indigo
 colorTo: blue
-sdk: docker
+sdk: gradio
 app_port: 7860
 pinned: false
 ---
