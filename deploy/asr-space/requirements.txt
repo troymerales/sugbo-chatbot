@@ -6,4 +6,3 @@ transformers==4.44.2
 accelerate==0.33.0
 librosa==0.10.2.post1
 soundfile==0.12.1
-gradio==4.44.1
