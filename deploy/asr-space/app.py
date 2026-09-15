@@ -60,13 +60,3 @@ demo = gr.Interface(
     description=f"Powered by {MODEL_ID}",
     api_name="transcribe",
 )
-
-
-if __name__ == "__main__":
-    print("Starting Gradio app...", flush=True)
-
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        ssr_mode=False,
-    )
