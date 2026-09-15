@@ -1,4 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
+gradio>=4.40.0
 torch==2.13.0
 transformers>=4.45.0
 accelerate>=0.30.0
