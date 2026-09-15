@@ -1,6 +1,10 @@
 import os
-import gradio as gr
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+import tempfile
 from transformers import pipeline
+
+app = FastAPI()
 
 MODEL_ID = os.environ.get(
     "MODEL_ID",
@@ -30,36 +34,54 @@ def get_pipe():
     return _pipe
 
 
-def transcribe_audio(audio_file):
-    if audio_file is None:
-        return "No audio provided"
+@app.get("/")
+async def health():
+    return {"status": "ok"}
+
+
+@app.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    if not file:
+        raise HTTPException(status_code=400, detail="No audio file provided")
 
     try:
         pipe = get_pipe()
 
-        result = pipe(
-            audio_file,
-            generate_kwargs={
-                "language": LANGUAGE,
-                "task": "transcribe",
-            },
-        )
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
 
-        return result["text"].strip()
+        try:
+            result = pipe(
+                temp_path,
+                generate_kwargs={
+                    "language": LANGUAGE,
+                    "task": "transcribe",
+                },
+            )
+
+            text = ""
+            if isinstance(result, dict):
+                text = result.get("text", "") or ""
+
+            return {
+                "text": text.strip(),
+                "model": MODEL_ID,
+                "language": LANGUAGE,
+            }
+
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     except Exception as e:
         print(f"Transcription error: {e}", flush=True)
-        return f"Error: {e}"
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
 
-
-demo = gr.Interface(
-    fn=transcribe_audio,
-    inputs=gr.Audio(type="filepath", label="Upload audio"),
-    outputs=gr.Textbox(label="Transcript"),
-    title="Bisaya/Cebuano Speech-to-Text",
-    description=f"Powered by {MODEL_ID}",
-    api_name="transcribe",
-)
 
 if __name__ == "__main__":
-    demo.launch()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
