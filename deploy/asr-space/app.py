@@ -60,3 +60,6 @@ demo = gr.Interface(
     description=f"Powered by {MODEL_ID}",
     api_name="transcribe",
 )
+
+if __name__ == "__main__":
+    demo.launch()
