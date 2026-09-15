@@ -272,7 +272,9 @@ def _transcribe_via_api(
     last_detail = "no response"
     for attempt in range(_API_MAX_ATTEMPTS):
         try:
-            resp = requests.post(url, headers=headers, data=audio_bytes,
+            # Send as multipart form (file upload), not raw bytes
+            auth_headers = {k: v for k, v in headers.items() if k.lower() == "authorization"}
+            resp = requests.post(url, files={"file": audio_bytes}, headers=auth_headers,
                                  timeout=_API_TIMEOUT_S)
         except requests.RequestException as e:
             last_detail = f"request error: {e}"
