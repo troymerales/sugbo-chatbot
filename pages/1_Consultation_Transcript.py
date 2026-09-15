@@ -165,7 +165,17 @@ if not has_transcript:
             )
             st.session_state.pop("transcript_box", None)
         except Exception as e:  # noqa: BLE001
-            st.session_state["cx_transcribe_error"] = f"Transcription failed: {e}"
+            err_msg = str(e)
+            # Detect tunnel/connection errors
+            if "503" in err_msg or "502" in err_msg or "Connection" in err_msg:
+                err_msg = ("🌐 **ASR service unreachable.** The transcription tunnel may be closed.\n\n"
+                          "To fix: Make sure both services are running:\n"
+                          "1. FastAPI server (Terminal 1)\n"
+                          "2. Cloudflare tunnel (Terminal 2)\n\n"
+                          f"Details: {err_msg}")
+            else:
+                err_msg = f"Transcription failed: {err_msg}"
+            st.session_state["cx_transcribe_error"] = err_msg
         st.rerun()
 
     st.stop()
