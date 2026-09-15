@@ -5,7 +5,6 @@ colorFrom: indigo
 colorTo: blue
 sdk: gradio
 app_file: app.py
-pinned: false
 ---
 
 # SugboDoc — Bisaya/Cebuano ASR endpoint

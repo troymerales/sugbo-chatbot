@@ -54,14 +54,10 @@ def transcribe_audio(audio_file):
 
 demo = gr.Interface(
     fn=transcribe_audio,
-    inputs=gr.Audio(
-        type="filepath",
-        label="Upload audio",
-    ),
-    outputs=gr.Textbox(
-        label="Transcript",
-    ),
+    inputs=gr.Audio(type="filepath", label="Upload audio"),
+    outputs=gr.Textbox(label="Transcript"),
     title="Bisaya/Cebuano Speech-to-Text",
+    description=f"Powered by {MODEL_ID}",
     api_name="transcribe",
 )
 
