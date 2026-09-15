@@ -184,7 +184,7 @@ def _panel() -> None:
     # in a band of blank space or overflows when that row appears. Letting the
     # transcript flex to fill would be nicer, but flex sizing does not survive
     # Streamlit's nested block wrappers — see styles.py.
-    _chrome = "19.25rem" if ss.asst_stage in ("feedback", "offer_ticket") else "13.5rem"
+    _chrome = "13.5rem"
     st.markdown(
         f'<style>[data-testid="stPopoverBody"]{{--sda-chrome:{_chrome};}}</style>',
         unsafe_allow_html=True,
@@ -210,15 +210,16 @@ def _panel() -> None:
             session.resolve_pending(draft or "")
             st.rerun()
 
-    _controls(ss.asst_stage)
+        _controls(ss.asst_stage)
 
     if ss.asst_stage in _INPUT_STAGES:
         with st.form("asst_input", clear_on_submit=True, border=False):
-            text = st.text_input(
+            c1, c2 = st.columns([6, 1])
+            text = c1.text_input(
                 "Message", label_visibility="collapsed",
                 placeholder="Ask about scheduling, billing, encounters…",
             )
-            sent = st.form_submit_button("Send", use_container_width=True)
+            sent = c2.form_submit_button("→", use_container_width=True)
         if sent and text.strip():
             session.ask(text.strip())
             st.rerun()
@@ -247,7 +248,11 @@ def _controls(stage: str) -> None:
     ss = st.session_state
 
     if stage == "feedback":
-        st.caption("Did that help? You can also just keep typing.")
+        cap_col, x_col = st.columns([5, 0.4])
+        cap_col.caption("Did that help? You can also just keep typing.")
+        if x_col.button("✕", key="asst_fb_dismiss", help="Dismiss"):
+            ss.asst_stage = "chat"
+            st.rerun()
         # Two passes, so the click is painted before the work starts: the first
         # records which button was pressed and reruns; the second renders that
         # button in its busy state and *then* calls session.feedback(), which
@@ -256,9 +261,9 @@ def _controls(stage: str) -> None:
         c1, c2 = st.columns(2)
         yes_box = c1.container(key="sdfb_busy_yes" if busy == "up" else "sdfb_yes")
         no_box = c2.container(key="sdfb_busy_no" if busy == "down" else "sdfb_no")
-        yes = yes_box.button("👍 Yes", use_container_width=True, key="asst_fb_yes",
+        yes = yes_box.button("Yes", use_container_width=True, key="asst_fb_yes",
                              disabled=busy is not None)
-        no = no_box.button("👎 No", use_container_width=True, key="asst_fb_no",
+        no = no_box.button("No", use_container_width=True, key="asst_fb_no",
                            disabled=busy is not None)
         if busy is None:
             if yes:
@@ -273,10 +278,15 @@ def _controls(stage: str) -> None:
             st.rerun()
 
     elif stage == "offer_ticket":
+        msg_col, x_col = st.columns([5, 0.4])
         if ss.asst_question_count >= config.QUESTIONS_BEFORE_TICKET:
-            st.warning("This is taking a while — want to file a ticket?")
+            msg_col.warning("This is taking a while — want to file a ticket?")
         else:
-            st.caption("Sorry that didn't help. File a ticket, or tell me more?")
+            msg_col.caption("Sorry that didn't help. File a ticket, or tell me more?")
+        if x_col.button("✕", key="asst_ticket_dismiss", help="Dismiss"):
+            ss.asst_question_count = 0
+            ss.asst_stage = "chat"
+            st.rerun()
         c1, c2 = st.columns(2)
         if c1.button("📨 Submit a ticket", use_container_width=True, key="asst_mk"):
             ticket_dialog()

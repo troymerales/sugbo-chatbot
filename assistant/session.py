@@ -44,6 +44,20 @@ _CORRECTION = (
 )
 
 
+def _suggests_ticket_filing(text: str) -> bool:
+    """Check if the bot's answer suggests filing a ticket."""
+    lower = text.lower()
+    keywords = [
+        "file a ticket",
+        "file ticket",
+        "want to file",
+        "file a support ticket",
+        "create a ticket",
+        "submit a ticket",
+    ]
+    return any(kw in lower for kw in keywords)
+
+
 # --------------------------------------------------------------------------- #
 # Lifecycle
 # --------------------------------------------------------------------------- #
@@ -136,6 +150,8 @@ def resolve_pending(draft: str) -> None:
 
     if result.refused or result.grounding.is_refusal_worthy:
         _enter_failure(grounding_failed=result.grounding.is_refusal_worthy)
+    elif _suggests_ticket_filing(draft):
+        _enter_failure()                     # bot suggested filing a ticket
     elif ss.asst_question_count >= config.QUESTIONS_BEFORE_TICKET:
         _enter_failure()                     # "taking a while" — offer a ticket
     else:

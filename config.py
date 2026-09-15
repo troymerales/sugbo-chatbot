@@ -137,7 +137,7 @@ VERIFY_ANSWERS = os.environ.get("VERIFY_ANSWERS", "1") != "0"
 
 # After this many user questions in one chat without a thumbs-up, the bot
 # proactively offers a ticket ("this is taking a while").
-QUESTIONS_BEFORE_TICKET = int(os.environ.get("QUESTIONS_BEFORE_TICKET", "3"))
+QUESTIONS_BEFORE_TICKET = int(os.environ.get("QUESTIONS_BEFORE_TICKET", "5"))
 
 # Cosine similarity above which a drafted ticket is treated as a duplicate of an
 # existing open Jira issue. Tune on real data (§3 of the architecture doc).

@@ -180,13 +180,18 @@ _CSS_TEMPLATE = """
        open; if it were free to grow as replies arrive it would grow downward and
        run off the bottom of the viewport. Fixed height => positioned correctly
        once, and a long conversation scrolls inside instead. */
-    height: min(36rem, calc(100vh - 7rem)) !important;
-    max-height: min(36rem, calc(100vh - 7rem)) !important;
+    height: min(36rem, calc(95vh - 7rem)) !important;
+    max-height: min(36rem, calc(95vh - 7rem)) !important;
     padding: 0 !important;
     border: 1px solid var(--sda-line) !important;
     border-radius: 16px !important;
     box-shadow: 0 20px 52px rgba(31, 36, 48, 0.18), 0 4px 12px rgba(31, 36, 48, 0.08) !important;
-    overflow: hidden auto !important;
+    overflow: auto !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+[data-testid="stPopoverBody"]::-webkit-scrollbar {
+    display: none !important;
 }
 
 /* Header banner — the app header's own gradient, so the panel reads as part of
@@ -227,7 +232,8 @@ _CSS_TEMPLATE = """
 /* Panel content sits inside st.container(key="sdasstbody") so the header above
    can run full-bleed to the panel edges. */
 .PANEL_CLS {
-    padding: 12px var(--sda-pad) var(--sda-pad);
+    padding: 10px var(--sda-pad) var(--sda-pad) !important;
+    transform: translateY(60px) !important;
 }
 
 /* ---------------- messages ----------------
@@ -235,21 +241,8 @@ _CSS_TEMPLATE = """
    a one-message conversation still reads as a chat window and the input stays
    put instead of jumping down the panel as replies arrive. */
 .st-key-sdasstlog {
-    /* A standing height rather than a min: the transcript is the only part that
-       scrolls, so the header and the input stay put and a scrollbar appears
-       only once the conversation is taller than this box. Sized against the
-       panel's own height so it still fits on a short viewport. */
-    /* Streamlit gives every stVerticalBlock `flex: 1 1 0%`, and a flex-basis of
-       0 overrides `height` on the main axis — so the height below is ignored
-       until the block opts out of flex sizing. !important on both because those
-       Streamlit rules outrank a plain class selector.
-
-       The height is the panel minus everything else in it. `--sda-chrome` is
-       set per rerun by widget.py, because the "Did that help?" row comes and
-       goes and only Python knows which stage we are in — letting the transcript
-       flex to fill instead does not survive Streamlit's nested wrappers. */
     flex: 0 0 auto !important;
-    height: calc(min(36rem, calc(100vh - 7rem)) - var(--sda-chrome, 11.5rem)) !important;
+    height: calc(min(36rem, calc(95vh - 7rem)) - 13.5rem) !important;
     overflow-y: auto !important;
     display: flex;
     flex-direction: column;
@@ -289,7 +282,7 @@ _CSS_TEMPLATE = """
     [data-testid="stChatMessageContent"] {
     background: var(--sda-bg);
     border: 1px solid var(--sda-line);
-    border-radius: 14px 14px 14px 4px;
+    border-radius: 4px 14px 14px 14px;
     color: var(--sda-ink-2);
     flex-grow: 0;
     max-width: 85%;
@@ -302,7 +295,7 @@ _CSS_TEMPLATE = """
 .PANEL_CLS [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
     [data-testid="stChatMessageContent"] {
     background: var(--sda-indigo);
-    border-radius: 14px 14px 4px 14px;
+    border-radius: 14px 4px 14px 14px;
     color: #ffffff;
     flex-grow: 0;
     /* Streamlit centres a shrunk message bubble with ~130px auto side margins,
@@ -379,6 +372,59 @@ _CSS_TEMPLATE = """
     border-color: var(--sda-indigo);
     color: var(--sda-indigo);
     background: #fafbff;
+}
+
+.PANEL_CLS [class*="st-key-sdfb"] .stButton button {
+    padding: 2px 3px !important;
+    font-size: 12px !important;
+    min-height: auto !important;
+}
+
+/* dismiss button — plain X, no background */
+.st-key-asst_fb_dismiss button {
+    border: 0 !important;
+    background: transparent !important;
+    padding: 2px 4px !important;
+    min-height: auto !important;
+    height: auto !important;
+    color: var(--sda-muted) !important;
+    font-size: 16px !important;
+}
+.st-key-asst_fb_dismiss button:hover,
+.st-key-asst_ticket_dismiss button:hover {
+    background: transparent !important;
+    color: var(--sda-ink) !important;
+}
+
+.st-key-asst_fb_dismiss {
+    margin-bottom: -18px !important;
+}
+
+.st-key-asst_ticket_dismiss button {
+    border: 0 !important;
+    background: transparent !important;
+    padding: 2px 4px !important;
+    min-height: auto !important;
+    height: auto !important;
+    color: var(--sda-muted) !important;
+    font-size: 16px !important;
+}
+
+/* tighter spacing: only between caption and buttons in feedback */
+.PANEL_CLS [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] + [data-testid="stVerticalBlock"] {
+    margin-top: -6px !important;
+}
+
+.st-key-asst_ticket_dismiss {
+    margin-bottom: -18px !important;
+}
+
+/* ticket buttons */
+.st-key-asst_mk button,
+.st-key-asst_more button {
+    border-radius: 20px !important;
+    padding: 1px 12px !important;
+    font-size: 14px !important;
 }
 
 /* ---------------- busy state on the feedback buttons ----------------
