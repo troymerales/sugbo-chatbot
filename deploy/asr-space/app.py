@@ -52,11 +52,14 @@ def transcribe_audio(audio_file):
         return f"Error: {e}"
 
 
+# Removed invalid `api_name` keyword from gr.Interface
 demo = gr.Interface(
     fn=transcribe_audio,
     inputs=gr.Audio(type="filepath", label="Upload audio"),
     outputs=gr.Textbox(label="Transcript"),
     title="Bisaya/Cebuano Speech-to-Text",
     description=f"Powered by {MODEL_ID}",
-    api_name="transcribe",
 )
+
+if __name__ == "__main__":
+    demo.launch(ssr_mode=False)
