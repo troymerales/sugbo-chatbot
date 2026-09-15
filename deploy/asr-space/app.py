@@ -41,10 +41,14 @@ async def health():
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
+    print(f"[DEBUG] POST /transcribe received, file: {file.filename}", flush=True)
+
     if not file:
+        print("[DEBUG] No file provided", flush=True)
         raise HTTPException(status_code=400, detail="No audio file provided")
 
     try:
+        print("[DEBUG] Loading pipeline...", flush=True)
         pipe = get_pipe()
 
         # Save uploaded file temporarily
@@ -53,7 +57,10 @@ async def transcribe(file: UploadFile = File(...)):
             temp_file.write(content)
             temp_path = temp_file.name
 
+        print(f"[DEBUG] Temp file saved: {temp_path}, size: {len(content)} bytes", flush=True)
+
         try:
+            print("[DEBUG] Running transcription...", flush=True)
             result = pipe(
                 temp_path,
                 generate_kwargs={
@@ -66,6 +73,7 @@ async def transcribe(file: UploadFile = File(...)):
             if isinstance(result, dict):
                 text = result.get("text", "") or ""
 
+            print(f"[DEBUG] Transcription complete: {text[:50]}...", flush=True)
             return {
                 "text": text.strip(),
                 "model": MODEL_ID,
@@ -76,9 +84,10 @@ async def transcribe(file: UploadFile = File(...)):
             # Clean up temp file
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+                print(f"[DEBUG] Cleaned up temp file", flush=True)
 
     except Exception as e:
-        print(f"Transcription error: {e}", flush=True)
+        print(f"[DEBUG] ERROR: {type(e).__name__}: {e}", flush=True)
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
 
 
