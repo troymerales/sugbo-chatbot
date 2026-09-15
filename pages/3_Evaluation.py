@@ -13,6 +13,15 @@ load_secrets()
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
+# Hide the "Manage app" button
+st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] button[data-testid="stMenuAnchor"] {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 from assistant.widget import render_floating_assistant  # noqa: E402
 from stt import evaluation  # noqa: E402
 from stt.config import get_settings  # noqa: E402

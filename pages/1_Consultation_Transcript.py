@@ -17,6 +17,17 @@ from assistant.bootstrap import load_secrets
 
 load_secrets()
 
+import streamlit as st
+
+# Hide the "Manage app" button
+st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] button[data-testid="stMenuAnchor"] {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 import streamlit as st  # noqa: E402
 
 from assistant.widget import preload_assistant, render_floating_assistant  # noqa: E402

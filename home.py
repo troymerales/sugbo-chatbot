@@ -19,6 +19,15 @@ import config  # noqa: E402
 from assistant.widget import render_floating_assistant  # noqa: E402
 from shell import render_shell  # noqa: E402
 
+# Hide the "Manage app" button in the top-right
+st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] button[data-testid="stMenuAnchor"] {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 _BODY = config.ROOT / "web" / "dashboard.html"
 
 render_shell("dashboard")
