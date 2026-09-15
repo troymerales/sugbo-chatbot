@@ -4,7 +4,7 @@ emoji: 🎙️
 colorFrom: indigo
 colorTo: blue
 sdk: gradio
-app_port: 7860
+app_file: app.py
 pinned: false
 ---
 
