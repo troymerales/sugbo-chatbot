@@ -19,10 +19,18 @@ import config  # noqa: E402
 from assistant.widget import render_floating_assistant  # noqa: E402
 from shell import render_shell  # noqa: E402
 
-# Hide the "Manage app" button in the top-right
+# Hide Streamlit UI elements
 st.markdown("""
     <style>
+    /* Hide the "Manage app" button */
     [data-testid="stAppViewContainer"] button[data-testid="stMenuAnchor"] {
+        display: none !important;
+    }
+    /* Hide "Made with Streamlit" footer and creator credit */
+    footer {
+        display: none !important;
+    }
+    [data-testid="stDecoration"] {
         display: none !important;
     }
     </style>

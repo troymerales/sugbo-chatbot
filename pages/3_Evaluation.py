@@ -13,10 +13,16 @@ load_secrets()
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
-# Hide the "Manage app" button
+# Hide Streamlit UI elements
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] button[data-testid="stMenuAnchor"] {
+        display: none !important;
+    }
+    footer {
+        display: none !important;
+    }
+    [data-testid="stDecoration"] {
         display: none !important;
     }
     </style>
