@@ -19,7 +19,7 @@ import config  # noqa: E402
 from assistant.widget import render_floating_assistant  # noqa: E402
 from shell import render_shell  # noqa: E402
 
-# Hide Streamlit UI elements
+# Hide Streamlit UI elements & raise floating assistant
 st.markdown("""
     <style>
     /* Hide the "Manage app" button */
@@ -32,6 +32,10 @@ st.markdown("""
     }
     [data-testid="stDecoration"] {
         display: none !important;
+    }
+    /* Raise floating assistant button above badges */
+    [data-testid="stChatFloatingInputContainer"] {
+        z-index: 9999 !important;
     }
     </style>
     """, unsafe_allow_html=True)

@@ -19,7 +19,7 @@ load_secrets()
 
 import streamlit as st
 
-# Hide Streamlit UI elements
+# Hide Streamlit UI elements & raise floating assistant
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] button[data-testid="stMenuAnchor"] {
@@ -30,6 +30,9 @@ st.markdown("""
     }
     [data-testid="stDecoration"] {
         display: none !important;
+    }
+    [data-testid="stChatFloatingInputContainer"] {
+        z-index: 9999 !important;
     }
     </style>
     """, unsafe_allow_html=True)

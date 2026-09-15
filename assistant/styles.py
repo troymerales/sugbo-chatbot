@@ -65,7 +65,7 @@ _CSS_TEMPLATE = """
 .ANCHOR_CLS {
     position: fixed;
     right: 1.5rem;
-    bottom: 1.5rem;
+    bottom: 4rem;
     z-index: 9990;
     width: auto;
 }

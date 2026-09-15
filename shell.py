@@ -62,11 +62,28 @@ _CSS = """
 [data-testid="stDecoration"], [data-testid="stStatusWidget"], footer{
   display:none !important;
 }
+/* Hide Streamlit's auto-generated page navigation (pages/ directory) */
+[data-testid="stSidebar"] [data-testid="stSidebarNavItems"],
+[data-testid="stSidebar"] [data-testid="stSidebarNavLinks"],
+[data-testid="stSidebar"] [data-testid="stSidebarNavItemsContainer"]{
+  display:none !important;
+  margin:0 !important;
+  padding:0 !important;
+  height:0 !important;
+}
+/* Hide sidebar header and logo spacer */
+[data-testid="stSidebarHeader"], [data-testid="stLogoSpacer"],
+[data-testid="stSidebarNavSeparator"]{
+  display:none !important;
+  margin:0 !important;
+  padding:0 !important;
+  height:0 !important;
+}
 [data-testid="stAppViewContainer"], .stApp{ background:var(--sd-bg); }
 [data-testid="stMain"]{ padding-top:0 !important; }
 [data-testid="stMain"] .block-container,
 [data-testid="stMainBlockContainer"]{
-  padding:1.1rem 1.75rem 4rem !important;
+  padding:0 1.75rem 4rem !important;
   max-width:100% !important;
 }
 html, body, [class*="css"]{
@@ -280,7 +297,7 @@ html, body, [class*="css"]{
 .sd-topbar{
   background:linear-gradient(100deg,#3b41d6 0%,#4a50e4 55%,#5a54e8 100%);
   color:#fff;
-  margin:-1.1rem -1.75rem 1.4rem; padding:13px 26px;
+  margin:-2.1rem -1.75rem 1.4rem; padding:13px 26px;
   display:flex; align-items:center; justify-content:space-between; gap:16px;
   box-shadow:0 2px 14px rgba(59,65,214,.22);
 }
