@@ -233,6 +233,9 @@ _CSS_TEMPLATE = """
    can run full-bleed to the panel edges. */
 .PANEL_CLS {
     padding: 10px var(--sda-pad) var(--sda-pad) !important;
+}
+
+.PANEL_CLS [data-testid="stForm"] {
     transform: translateY(60px) !important;
 }
 
