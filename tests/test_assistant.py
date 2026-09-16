@@ -12,6 +12,7 @@ import pytest
 
 from streamlit.testing.v1 import AppTest
 
+import config
 from assistant import session
 from core import chatlog
 
@@ -79,12 +80,16 @@ def test_thumbs_up_resolves_and_logs_once():
     assert len(rows) == 1 and rows[0].outcome == "resolved"
 
 
-def test_taking_a_while_auto_offers_after_three_questions():
+def test_taking_a_while_auto_offers_after_enough_questions():
+    # Driven off the constant rather than a literal: the threshold is a product
+    # dial that has already been retuned once, and a hardcoded count here just
+    # goes red the next time it moves.
     at = _app()
-    for _ in range(3):
+    for _ in range(config.QUESTIONS_BEFORE_TICKET):
         _ask(at, "How do I void a payment?")
     assert _stage(at) == "offer_ticket"
-    assert at.session_state["asst_question_count"] == 3
+    assert (at.session_state["asst_question_count"]
+            == config.QUESTIONS_BEFORE_TICKET)
 
 
 def test_tell_me_more_returns_to_chat():
