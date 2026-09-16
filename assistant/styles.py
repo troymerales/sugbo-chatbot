@@ -186,12 +186,11 @@ _CSS_TEMPLATE = """
     border: 1px solid var(--sda-line) !important;
     border-radius: 16px !important;
     box-shadow: 0 20px 52px rgba(31, 36, 48, 0.18), 0 4px 12px rgba(31, 36, 48, 0.08) !important;
-    overflow: auto !important;
-    scrollbar-width: none !important;
-    -ms-overflow-style: none !important;
-}
-[data-testid="stPopoverBody"]::-webkit-scrollbar {
-    display: none !important;
+    /* hidden, not auto: the panel itself must never scroll, or the header and
+       the input row slide away with the transcript. Only the log scrolls. */
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
 
 /* Header banner — the app header's own gradient, so the panel reads as part of
@@ -230,27 +229,69 @@ _CSS_TEMPLATE = """
 }
 
 /* Panel content sits inside st.container(key="sdasstbody") so the header above
-   can run full-bleed to the panel edges. */
+   can run full-bleed to the panel edges.
+
+   No top padding here, and no gap below the header (next rule): the breathing
+   room above the first message belongs *inside* the transcript instead, as its
+   padding-top, so it scrolls away with the messages. Anything left out here
+   would sit between the header and the scroll area as a permanent white band
+   that the conversation slides behind. */
 .PANEL_CLS {
-    padding: 10px var(--sda-pad) var(--sda-pad) !important;
+    padding: 0 var(--sda-pad) var(--sda-pad) !important;
+}
+/* Only the outermost block — the one holding the header — loses its gap; the
+   blocks inside the transcript keep theirs, which is what spaces the bubbles. */
+[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(.sd-asst-head) {
+    gap: 0 !important;
+}
+/* Streamlit gives every markdown container a -16px bottom margin, which left
+   the header's element container 16px shorter than the banner it paints. The
+   transcript then began *inside* the header and scrolled messages drew over
+   the gradient. Zeroed here so the banner's bottom edge is where the scroll
+   area actually starts, and content clips cleanly against it. */
+[data-testid="stPopoverBody"] [data-testid="stMarkdownContainer"]:has(> .sd-asst-head) {
+    margin-bottom: 0 !important;
 }
 
-.PANEL_CLS [data-testid="stForm"] {
-    transform: translateY(60px) !important;
+/* ---------------- panel layout ----------------
+   Header on top, transcript taking whatever is left, input row pinned at the
+   bottom. Streamlit buries each element under two or three anonymous wrapper
+   divs, so the flex chain has to be handed down through all of them: `:has()`
+   picks out exactly the wrappers on the path to the transcript, and
+   `min-height:0` is what lets them shrink below their content — without it a
+   flex item refuses to get shorter than what is inside it and the overflow
+   pushes the input row off the bottom instead of scrolling the log. */
+[data-testid="stPopoverBody"] div:has(.st-key-sdasstlog) {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
 }
-
-/* ---------------- messages ----------------
-   The transcript holds a standing height and grows upward from the bottom, so
-   a one-message conversation still reads as a chat window and the input stays
-   put instead of jumping down the panel as replies arrive. */
-.st-key-sdasstlog {
+/* Everything that is *not* on that path keeps its natural height: the header
+   banner, the input row, and each message inside the log. Left at the default
+   flex-shrink they would be squeezed and clipped once the log overflows. */
+[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]
+    > div:not(:has(.st-key-sdasstlog)):not(.st-key-sdasstlog) {
     flex: 0 0 auto !important;
-    height: calc(min(36rem, calc(95vh - 7rem)) - 13.5rem) !important;
+}
+
+/* ---------------- the transcript ----------------
+   The one scrollable region in the panel. It takes the space the header and
+   the input row do not, whatever that turns out to be — so the feedback and
+   ticket rows can appear and disappear without the panel over- or
+   under-flowing, and without a hand-tuned chrome constant to keep in sync. */
+.st-key-sdasstlog {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    /* Scrolls with the content, unlike padding on the wrapper above: present
+       at the top of the conversation, gone once you scroll down, so the
+       messages pass flush under the header. */
+    padding-top: 1rem !important;
     overflow-y: auto !important;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    /* scrolls, but shows no bar -- a track reads as a seam in a chat panel */
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
@@ -258,7 +299,7 @@ _CSS_TEMPLATE = """
 /* ---------------- messages ---------------- */
 .PANEL_CLS [data-testid="stChatMessage"] {
     background: transparent;
-    padding: 2px 0;
+    padding: 2px 0 !important;
     gap: 9px;
 }
 .PANEL_CLS [data-testid="stChatMessage"] [data-testid="stChatMessageContent"] {
@@ -422,6 +463,7 @@ _CSS_TEMPLATE = """
     margin-bottom: -18px !important;
 }
 
+
 /* ticket buttons */
 .st-key-asst_mk button,
 .st-key-asst_more button {
@@ -512,6 +554,7 @@ _CSS_TEMPLATE = """
     [data-testid="stPopoverBody"] {
         width: calc(100vw - 2.75rem) !important;
         max-width: calc(100vw - 2.75rem) !important;
+        height: calc(100vh - 6rem) !important;
         max-height: calc(100vh - 6rem) !important;
     }
 }

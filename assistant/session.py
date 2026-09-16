@@ -37,6 +37,9 @@ GREETING = (
     "encounters, billing or immunizations."
 )
 
+# Stands in for an answer when the user asks for a ticket outright.
+_TICKET_ACK = "Sure — let's get that in front of the team."
+
 # The message prepended when the verification pass walks back a streamed draft.
 _CORRECTION = (
     "⚠️ **Correction:** I can't fully ground that in the documentation, so please "
@@ -45,7 +48,11 @@ _CORRECTION = (
 
 
 def _suggests_ticket_filing(text: str) -> bool:
-    """Check if the bot's answer suggests filing a ticket."""
+    """Does this turn put filing a ticket on the table?
+
+    Read against the bot's answer (it offered) and against the user's message
+    (they asked) — the phrasing is the same either way, so one list serves both.
+    """
     lower = text.lower()
     keywords = [
         "file a ticket",
@@ -69,7 +76,9 @@ def init() -> None:
         return
     ss.asst_conversation_id = chatlog.new_conversation_id()
     ss.asst_started_at = chatlog.now_iso()
-    ss.asst_messages = [{"role": "assistant", "content": GREETING}]
+    ss.asst_messages = [
+        {"role": "assistant", "content": GREETING}
+    ]
     ss.asst_question_count = 0
     ss.asst_stage = "chat"                       # chat | feedback | offer_ticket | done
     ss.asst_grounding_checks = []
@@ -78,6 +87,7 @@ def init() -> None:
     ss.asst_thumbs = None
     ss.asst_ticket_id = None
     ss.asst_ticket_draft = None                  # (subject, category, summary)
+    ss.asst_ticket_requested = False             # user asked outright, not a failure
     ss.asst_duplicate_of = None                  # {key, summary, similarity}
     ss.asst_dup_dismissed = False
     ss.asst_needed_by = None
@@ -117,6 +127,19 @@ def ask(text: str) -> None:
     streams `stream_reply()` and calls `resolve_pending()`."""
     ss = st.session_state
     ss.asst_messages.append({"role": "user", "content": text})
+
+    # Asking for a ticket is not a documentation question, so don't send it to
+    # the model: there is nothing in the docs to ground "I want to file a
+    # ticket" in, and the answer comes back as "I don't have enough information
+    # on that" — a refusal in front of a request the widget can satisfy itself.
+    # Straight to the offer instead, and the question count is left alone so
+    # this does not push the conversation toward the "taking a while" warning.
+    if _suggests_ticket_filing(text):
+        ss.asst_ticket_requested = True
+        ss.asst_messages.append({"role": "assistant", "content": _TICKET_ACK})
+        _enter_failure()
+        return
+
     ss.asst_question_count += 1
     ss.asst_pending = True
     ss.asst_pending_q = text
@@ -179,6 +202,7 @@ def feedback(helpful: bool) -> None:
 def tell_me_more() -> None:
     ss = st.session_state
     ss.asst_stage = "chat"
+    ss.asst_ticket_requested = False
     ss.asst_messages.append(
         {"role": "assistant",
          "content": "Okay — what else can you tell me about the issue?"}

@@ -179,20 +179,10 @@ def render_floating_assistant() -> None:
 def _panel() -> None:
     ss = st.session_state
 
-    # How much of the panel is *not* transcript. The feedback / ticket row only
-    # exists in some stages, so without adjusting for it the panel either ends
-    # in a band of blank space or overflows when that row appears. Letting the
-    # transcript flex to fill would be nicer, but flex sizing does not survive
-    # Streamlit's nested block wrappers — see styles.py.
-    _chrome = "13.5rem"
-    st.markdown(
-        f'<style>[data-testid="stPopoverBody"]{{--sda-chrome:{_chrome};}}</style>',
-        unsafe_allow_html=True,
-    )
-
-    # The transcript gets its own container so the stylesheet can give it a
-    # standing height — a chat panel that is only as tall as its content looks
-    # like a tooltip, not a chat window.
+    # The transcript gets its own container so the stylesheet can make it the
+    # panel's one scrollable region: it flexes to fill whatever the header and
+    # the input row leave behind, so the feedback / ticket rows can come and go
+    # without the panel overflowing. See the panel layout section in styles.py.
     with st.container(key="sdasstlog"):
         for msg in ss.asst_messages:
             role = "user" if msg["role"] == "user" else "assistant"
@@ -279,12 +269,17 @@ def _controls(stage: str) -> None:
 
     elif stage == "offer_ticket":
         msg_col, x_col = st.columns([5, 0.4])
-        if ss.asst_question_count >= config.QUESTIONS_BEFORE_TICKET:
+        # Three ways into this stage, and an apology only fits one of them: the
+        # user asking for a ticket outright is not an answer that fell short.
+        if ss.get("asst_ticket_requested"):
+            msg_col.caption("File one below, or tell me more about the issue?")
+        elif ss.asst_question_count >= config.QUESTIONS_BEFORE_TICKET:
             msg_col.warning("This is taking a while — want to file a ticket?")
         else:
             msg_col.caption("Sorry that didn't help. File a ticket, or tell me more?")
         if x_col.button("✕", key="asst_ticket_dismiss", help="Dismiss"):
             ss.asst_question_count = 0
+            ss.asst_ticket_requested = False
             ss.asst_stage = "chat"
             st.rerun()
         c1, c2 = st.columns(2)
