@@ -68,6 +68,9 @@ Settings are read from environment variables (set in `.streamlit/secrets.toml` o
 | `VERIFY_ANSWERS`          | `1`                               | `0` = skip the chatbot's second-pass verification (costs 1 Gemini call/question).                                                                        |
 | `USE_RAG`                 | `0`                               | `1` = retrieve and inject doc sections into answer prompts.                                                                                              |
 | `RAG_TOP_K`               | `6`                               | Number of doc sections to retrieve per question (only if `USE_RAG=1`).                                                                                   |
+| `VECTOR_BACKEND`          | `chroma`                          | Where RAG's section embeddings live. `memory` = in-process linear scan, rebuilt each start.                                                              |
+| `VECTOR_DIR`              | `logs/chroma`                     | Directory for the persistent Chroma collection (only if `VECTOR_BACKEND=chroma`).                                                                        |
+| `EMBEDDINGS_SEED`         | `embeddings.json`                 | Pre-computed section embeddings reused on a cold start. Ignored unless its stamped fingerprint matches the current docs.                                 |
 | `DATABASE_URL`            | —                                 | Supabase connection string (Session pooler). Chat logs persist to `chat_logs` table. Without it, logs go to local JSONL.                                 |
 | `JIRA_*`                  | —                                 | Jira Cloud credentials for ticket creation. Omit to disable ticketing.                                                                                   |
 | `BISAYA_WHISPER_MODEL_ID` | `troxyz1268/whisper-small-bisaya` | HuggingFace checkpoint ID for the fine-tuned Whisper model.                                                                                              |
@@ -130,7 +133,7 @@ assistant/                       Floating chatbot widget
 
 core/                            Chatbot library (pure Python, Streamlit-independent)
   bot.py · engine.py             Main pipeline: retrieve docs → build prompt → call LLM
-  knowledge.py · retrieval.py    Doc loading and semantic search (FAISS)
+  knowledge.py · retrieval.py    Doc loading and semantic search (ChromaDB)
   grounding.py                   Verify answers against the source docs
   llm.py                         Gemini + mock interface; LLM result caching
   failure_capture.py             Log reasons why the chatbot refused a question
@@ -150,6 +153,8 @@ stt/                             Speech-to-text → SOAP library (pure Python, n
   config.py                      Settings (read from environment)
 
 stt_ui.py                        Streamlit-specific helpers for the STT pages
+
+stamp_embeddings.py              Stamp embeddings.json so RAG reuses it instead of re-embedding
 
 web/
   dashboard.html                 Static home-page backdrop

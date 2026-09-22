@@ -15,6 +15,11 @@ pydantic>=2
 SQLAlchemy>=2.0
 psycopg[binary]>=3.1
 
+# Vector store for RAG retrieval (core/retrieval.py). The doc-section embeddings
+# live in a persistent Chroma collection under logs/chroma/, so a restart
+# re-embeds nothing. VECTOR_BACKEND=memory falls back to an in-process scan.
+chromadb>=1.0
+
 # STT -> SOAP workflow (stt/, pages/)
 pandas>=2.0          # Past Notes / Evaluation tables
 jiwer>=3.0           # WER / CER scoring on the Evaluation page

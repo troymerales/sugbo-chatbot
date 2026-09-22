@@ -47,6 +47,12 @@ def _isolated_env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LLM_CACHE", True)
     monkeypatch.setattr(config, "LLM_OFFLINE", False)
     monkeypatch.setattr(config, "USE_RAG", False)
+    # Retrieval runs on the in-process scan: no Chroma files to lock or clean
+    # up per test, and the mock backend's 256-dim vectors stay out of any index
+    # a real (3072-dim Gemini) run might leave on disk.
+    monkeypatch.setattr(config, "VECTOR_BACKEND", "memory")
+    monkeypatch.setattr(config, "VECTOR_DIR", tmp_path / "chroma")
+    monkeypatch.setattr(config, "EMBEDDINGS_SEED_PATH", tmp_path / "embeddings.json")
     monkeypatch.setattr(config, "LLM_CACHE_PATH", tmp_path / "cache.sqlite")
     monkeypatch.setattr(config, "LOG_DIR", tmp_path)
     monkeypatch.setattr(config, "CHAT_LOG_PATH", tmp_path / "chats.jsonl")

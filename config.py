@@ -115,10 +115,31 @@ DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "2"))
 # True: only the top-K most relevant ## / ### sections are retrieved (embedding
 #   cosine) and injected. The verification pass and the eval judge still see the
 #   full docs, so both modes are drop-in compatible with the rest of the pipeline.
-USE_RAG = os.environ.get("USE_RAG", "0") == "1"
+USE_RAG = os.environ.get("USE_RAG", "1") == "1"
 
 # How many sections RAG injects into the answer prompt when USE_RAG is True.
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "6"))
+
+# Where the section embeddings live once RAG is on.
+#   "chroma" (default): a persistent ChromaDB collection under VECTOR_DIR. It is
+#     built once and survives restarts, so a cold start re-embeds nothing and a
+#     question is an HNSW lookup rather than a cosine scan over every section.
+#   "memory": the original in-process list + linear scan. Touches no files and
+#     is rebuilt on every process start. The test suite runs on this.
+VECTOR_BACKEND = os.environ.get("VECTOR_BACKEND", "chroma")
+
+# On-disk home for the Chroma collection. Sits under LOG_DIR so it inherits the
+# temp-dir fallback on a read-only host (Streamlit Community Cloud) — there the
+# index is simply rebuilt on each cold start.
+_vector_dir = os.environ.get("VECTOR_DIR")
+VECTOR_DIR = Path(_vector_dir) if _vector_dir else LOG_DIR / "chroma"
+
+# Pre-computed section embeddings, so building the index on a cold start costs
+# no Gemini quota. The file stamps the (docs, backend, embed model) fingerprint
+# it was generated under; anything else and it is ignored and the sections are
+# embedded again. Unset EMBEDDINGS_SEED to always embed from scratch.
+_seed = os.environ.get("EMBEDDINGS_SEED", "")
+EMBEDDINGS_SEED_PATH = Path(_seed) if _seed else ROOT / "embeddings.json"
 
 # --------------------------------------------------------------------------- #
 # Answer verification  (core/grounding.py)
