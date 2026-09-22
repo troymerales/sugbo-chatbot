@@ -42,9 +42,9 @@ class AnswerResult:
 def fresh_chat():
     """A new multi-turn chat session.
 
-    Full-context mode: primed with the entire documentation.
-    RAG mode (config.USE_RAG): primed with a placeholder; `respond()` swaps in
-    the retrieved sections for each question.
+    RAG mode (config.USE_RAG, the default): primed with a placeholder;
+    `respond()` swaps in the sections retrieved for each question.
+    Full-context mode (USE_RAG=0): primed with the entire documentation.
     """
     return llm.new_chat(knowledge.system_prompt(), model=config.ANSWER_MODEL)
 

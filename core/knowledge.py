@@ -4,11 +4,12 @@ The knowledge base: SugboDoc-Documentation.md.
 Loads the docs, splits them into sections (by `##` / `###` headings) for citation
 and eval matching, and assembles the system prompt the answer model runs with.
 
-By default the whole doc goes in the prompt every turn — it is ~8k tokens and
-fits comfortably. Set `config.USE_RAG=True` (env `USE_RAG=1`) to switch to
-section-level retrieval instead: `system_prompt(query=...)` then returns only the
-top-K relevant sections (see `core/retrieval.py`). Either way this module is the
-single place that decision lives.
+Retrieval is the default path (`config.USE_RAG`, on unless `USE_RAG=0`):
+`system_prompt(query=...)` returns only the top-K sections most relevant to that
+question, ranked from a ChromaDB index of section embeddings (`core/retrieval.py`).
+Setting `USE_RAG=0` falls back to putting the whole doc in the prompt every turn,
+which is kept as the eval harness's comparison baseline. Either way this module is
+the single place that decision lives.
 """
 
 from __future__ import annotations
@@ -147,8 +148,8 @@ def _rag_prompt(query: str) -> str:
 def system_prompt(query: str | None = None) -> str:
     """The answer model's system prompt.
 
-    Full docs by default. When `config.USE_RAG` is on and a `query` is given,
-    only the top-K retrieved sections are included instead.
+    With `config.USE_RAG` on (the default) and a `query` given, only the
+    top-K retrieved sections are included. Otherwise the full docs are.
     """
     if config.USE_RAG and query:
         return _rag_prompt(query)

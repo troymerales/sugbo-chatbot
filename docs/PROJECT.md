@@ -16,13 +16,15 @@ repo): **`MERGE.md`**.
 
 ## 1. The chatbot idea in one paragraph
 
-The product docs are small (~8k tokens). So by default, instead of a vector database and
-retrieval (RAG), the **whole document goes into the prompt every turn**. (A `USE_RAG=1`
-toggle switches the *answer* prompt to embedding-cosine section retrieval — `core/retrieval.py`
-— while the verification pass keeps seeing the full docs, so the two modes are
-interchangeable.) A second, independent model call then checks the answer against the
-docs — a *verification pass* — and if any claim isn't supported, the answer is replaced
-with a fixed refusal. Every conversation is logged. A failed conversation becomes an
+Answers are grounded by **retrieval (RAG)** — the default path. The docs are split into
+64 sections, each embedded once into a persistent **ChromaDB** collection, and only the
+top-`RAG_TOP_K` sections for the current question go into the answer prompt
+(`core/retrieval.py`). The full-document prompt is still there behind `USE_RAG=0`, as a
+fallback and as the baseline the eval harness compares against. A second, independent
+model call then checks the answer against the **full** docs — a *verification pass* — and
+if any claim isn't supported, the answer is replaced with a fixed refusal. That split is
+deliberate: retrieval can miss the right section, so the checker never depends on it.
+Every conversation is logged. A failed conversation becomes an
 **outbound Jira ticket** (created only when the user asks). Jira is *never* read during a
 chat — dedup against open issues is the sole read.
 
@@ -38,6 +40,8 @@ chatbot/
 ├── streamlit_app.py              router — st.navigation([...], position="hidden")
 ├── home.py                       the dashboard page (web/dashboard.html body + assistant)
 ├── shell.py                      render_shell() — the eClinic chrome (left rail + top bar)
+├── stamp_embeddings.py           stamp embeddings.json with the docs fingerprint
+├── embeddings.json               pre-computed section vectors — seeds the vector index
 │
 ├── pages/                        the multipage app
 │   ├── 1_Consultation_Transcript.py   audio → transcript → SOAP → extract → review → save
@@ -68,7 +72,7 @@ chatbot/
 │   ├── _gemini_backend.py        real Gemini calls (only llm.py imports it)
 │   ├── _mock_backend.py          offline deterministic stand-in (no API key / quota)
 │   ├── knowledge.py              load docs → sections → system prompt
-│   ├── retrieval.py              RAG mode: embedding-cosine section retrieval  ← NEW
+│   ├── retrieval.py              RAG (default): ChromaDB section retrieval
 │   ├── grounding.py              the verification pass
 │   ├── failure_capture.py        rule-based failure signals (no model call)
 │   ├── ticketing.py              draft a ticket from a conversation
@@ -82,7 +86,7 @@ chatbot/
 ├── web/dashboard.html            static SugboDoc dashboard (the home-page backdrop)
 ├── .streamlit/                   config.toml (theme) + secrets.toml.example
 ├── docs/                         PROJECT.md · SugboDoc-Chatbot-Flowchart.md · the knowledge base
-└── tests/                        pytest suite (runs fully offline, 90 tests; AppTest for the pages)
+└── tests/                        pytest suite (runs fully offline, 115 tests; AppTest for the pages)
 ```
 
 `config.py` stays at the root so `import config` resolves everywhere; `stt/` has
@@ -98,7 +102,7 @@ chatbot tunable. Nothing else calls `load_dotenv`. The STT side has `stt/config.
 
 Key names:
 - `ANSWER_MODEL`, `UTILITY_MODEL`, `EMBED_MODEL` — overridable via env (`GEMINI_MODEL` etc.).
-- `QUESTIONS_BEFORE_TICKET` (default 3) — after this many questions without a 👍, the bot
+- `QUESTIONS_BEFORE_TICKET` (default 5) — after this many questions without a 👍, the bot
   proactively offers a ticket.
 - `DEDUP_SIMILARITY_THRESHOLD` (default 0.82) — cosine similarity above which a drafted
   ticket is treated as a duplicate.
@@ -106,6 +110,12 @@ Key names:
 - `VERIFY_ANSWERS` (default 1) — run the verification pass. `0` halves the model calls
   per question at the cost of the grounding check.
 - `LLM_BACKEND` (`gemini` | `mock`), `LLM_CACHE` (bool), `LLM_OFFLINE` (bool).
+- `USE_RAG` (default **1**) — section retrieval is the default grounding path. `0` puts the
+  whole document in the answer prompt instead.
+- `RAG_TOP_K` (default 6) — how many sections retrieval injects.
+- `VECTOR_BACKEND` (`chroma` | `memory`), `VECTOR_DIR` (`logs/chroma`) and
+  `EMBEDDINGS_SEED_PATH` (`embeddings.json`) — where the section embeddings live, and what
+  seeds them on a cold start.
 - On a read-only host, `LOG_DIR` (and the cache / JSONL paths under it) fall back to a
   temp dir so `import config` can't fail.
 
@@ -150,21 +160,39 @@ quality — that needs the real model.
 ### `knowledge.py`
 - `load_docs()` — cached read of `SugboDoc-Documentation.md`.
 - `sections()` — splits the doc on `##` / `###` headings into `Section(slug, title, level,
-  body)`. 60+ sections. `content_sections()` drops the table of contents.
+  body)`. 65 headings; `content_sections()` drops the table of contents, leaving **64**.
 - `find_section(needle)` — loose lookup by slug or title substring (used by the eval
   section-match check and `docs_loop.py`).
 - `system_prompt(query=None)` — assembles `PERSONA` (the answer rules + the exact refusal
-  sentence) + the docs between fences. Default: the **full docs**. With `config.USE_RAG` on
-  and a `query` given: only the top-`RAG_TOP_K` retrieved sections. **This is where the
-  retrieval decision lives.**
+  sentence) + the docs between fences. With `config.USE_RAG` on (**the default**) and a
+  `query` given: only the top-`RAG_TOP_K` retrieved sections. With `USE_RAG=0`, or with no
+  query, the **full docs**. **This is where the retrieval decision lives.**
 
-### `retrieval.py` — RAG mode
-Only used when `config.USE_RAG` is true. `top_sections(query, k)` / `rank_sections(query)`
-embed every content section once (`llm.embed`, itself cached) and rank them against the
-query embedding by plain cosine — no extra dependency; ChromaDB/FAISS would be the next
-step past a few hundred sections. `bot.respond()` swaps the retrieved prompt into
-`chat.system` per turn; `grounding.verify()` and the eval judge still read the full docs,
-so full-context and RAG runs are directly comparable (the eval scorecard records which).
+### `retrieval.py` — RAG, the default grounding path
+`top_sections(query, k)` / `rank_sections(query)` / `reset_index()` / `fingerprint()`.
+
+Section embeddings live in a persistent **ChromaDB** collection (cosine space) under
+`config.VECTOR_DIR` — `logs/chroma/`. It is built once and reused across restarts, so a
+question costs one query embedding plus an indexed top-K lookup rather than a re-embed or a
+scan over every section. `VECTOR_BACKEND=memory` swaps in the original in-process linear
+scan (no files, rebuilt each start); the test suite pins that via `tests/conftest.py`.
+`chromadb>=1.0` is a core dependency.
+
+**Fingerprint.** The collection is stamped with
+`sha256(LLM_BACKEND + EMBED_MODEL + docs text)[:16]`. Change the docs, the backend or the
+embedding model and the index is dropped and rebuilt. Without it a 256-dim mock index would
+be queried with a 3072-dim Gemini vector (`gemini-embedding-001`), which Chroma rejects
+outright — and, worse, edited docs would be served from stale vectors.
+
+**Seed.** `embeddings.json` at the repo root holds pre-computed Gemini vectors carrying that
+same fingerprint. When it matches, the index is built from the file with **zero** embedding
+API calls; when it doesn't, it is ignored and the sections are embedded again — so a stale
+seed costs quota, never correctness. `stamp_embeddings.py` rewrites the stamp after you
+regenerate the vectors.
+
+`bot.respond()` swaps the retrieved prompt into `chat.system` per turn; `grounding.verify()`
+and the eval judge still read the full docs, so RAG and full-context runs stay directly
+comparable (the eval scorecard records which).
 
 ### `grounding.py` — the verification pass
 `verify(question, draft_answer) -> GroundingVerdict`. A second model call with a
@@ -275,8 +303,8 @@ JSONB; plain JSON on SQLite for the tests). The table is created on first use.
 
 ### `bot.py` — the inference pipeline
 `respond(chat, question) -> AnswerResult`. The single code path for producing an answer:
-0. If `config.USE_RAG`: `chat.system = knowledge.system_prompt(query=question)` — re-ground
-   on the sections retrieved for this turn.
+0. `config.USE_RAG` (**on by default**): `chat.system = knowledge.system_prompt(query=question)`
+   — re-ground on the sections retrieved for this turn.
 1. `chat.send(question)` — the answer model, grounded in the docs.
 2. `grounding.verify(question, draft)` — always against the full docs (skipped if
    `config.VERIFY_ANSWERS` is off).
@@ -428,14 +456,15 @@ body → `render_floating_assistant()`. `stt_ui.py` holds the shared render help
 
 ## 5. Tests — `tests/`
 
-`pip install -r requirements-dev.txt && pytest`. 90 tests, **fully offline** — the
+`pip install -r requirements-dev.txt && pytest`. 115 tests, **fully offline** — the
 `conftest.py` fixture forces the mock backend and points every path (LLM cache, chat
 log, SOAP-notes DB) at a `tmp_path`; DB tests use a throwaway SQLite file.
 
 | File | What it locks down |
 |---|---|
 | `test_knowledge.py` | section parsing, TOC exclusion, `find_section`, system-prompt contents |
-| `test_retrieval.py` | full-context vs RAG prompt, section ranking, bot answers + refuses with RAG on |
+| `test_retrieval.py` | RAG vs full-context prompt, section ranking, bot answers + refuses with RAG on |
+| `test_retrieval_chroma.py` | the Chroma index: ranks identically to the linear scan, survives a restart without re-embedding, rebuilds on a backend change, uses a matching seed / ignores a stale one (skipped if `chromadb` is absent) |
 | `test_failure_capture.py` | every rule signal, fuzzy repeat detection |
 | `test_chatlog.py` | JSONL round-trip, upsert-on-`conversation_id` (+ CSV mirror), `.failed` |
 | `test_ticketing.py` | deterministic `default_draft`, `as_iso_date`, `urgency_for_date` |
@@ -454,7 +483,8 @@ log, SOAP-notes DB) at a `tmp_path`; DB tests use a throwaway SQLite file.
 
 | Decision | Why |
 |---|---|
-| Full docs in the prompt by default (RAG is opt-in) | ~8k tokens fit comfortably; retrieval adds a missed-chunk failure mode. `USE_RAG=1` switches only the answer prompt to embedding-cosine section retrieval; the verification pass still sees everything. |
+| **RAG by default**, full docs as the fallback | Retrieval keeps the answer prompt small and its cost flat as the knowledge base grows, instead of scaling with the whole document. The price is a missed-chunk failure mode — which is exactly why `grounding.verify()` and the eval judge always read the *full* docs: a bad retrieval surfaces as a refusal, not a confident wrong answer. `USE_RAG=0` restores the full-document prompt as a comparison baseline. |
+| **ChromaDB** for the vectors, not an in-process dict | The index persists, so a restart re-embeds nothing and top-K is an indexed lookup rather than a scan. Stamping the collection with a `(docs, backend, model)` fingerprint is what stops a stale or wrong-dimension index being served silently. `VECTOR_BACKEND=memory` keeps the dependency-free scan for tests. |
 | **Separate verification pass** instead of trusting one call | A model is bad at self-policing "I don't know". A cheap independent check catches hallucinations. `VERIFY_ANSWERS=0` turns it off. |
 | **Rules** for failure detection, not a classifier | The refusal marker + a 👎 button catch most failures with zero ML. |
 | Jira is **outbound-only**; dedup is the sole read | Reading tickets per turn adds latency and stale-status risk for no benefit. |
@@ -475,6 +505,10 @@ log, SOAP-notes DB) at a `tmp_path`; DB tests use a throwaway SQLite file.
   `core/chatlog_db.py`) is the natural follow-up.
 - **No end-user auth** — the chat and the transcript workspace are public by design. No PII
   redaction of a transcript before it's logged.
+- **The vector index is ephemeral on Community Cloud** — `logs/` (and so `logs/chroma/`) is
+  wiped on every cold start. It rebuilds for free from `embeddings.json` *only* when the
+  fingerprint matches, and `docs/SugboDoc-Documentation.md` is gitignored — so a deploy
+  carrying just the sample doc will re-embed every section through the API on each boot.
 - The verification pass doubles the chatbot's per-turn latency/cost — worth A/B-ing a
   confidence-gated version.
 - No real ASR accuracy numbers yet — run `pages/3_Evaluation.py` against a live `HF_TOKEN`.
@@ -485,7 +519,7 @@ log, SOAP-notes DB) at a `tmp_path`; DB tests use a throwaway SQLite file.
 
 ```
 pip install -r requirements-dev.txt
-pytest                                        # 90 tests, offline, ~5s
+pytest                                        # 115 tests, offline, ~5s
 
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # GEMINI_API_KEY, HF_TOKEN, JIRA_*
 LLM_BACKEND=mock streamlit run streamlit_app.py              # try it with no keys

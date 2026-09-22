@@ -6,7 +6,7 @@ A pure-Streamlit multipage app for clinic consulting. Combines a documentation-g
 
 ## Features
 
-**Support Assistant** — A floating 💬 on every page that answers questions strictly from the product knowledge base, runs an independent verification pass, and escalates stuck conversations to Jira tickets.
+**Support Assistant** — A floating 💬 on every page that answers questions strictly from the product knowledge base. Each question retrieves the most relevant documentation sections from a local vector index, an independent verification pass checks the draft against the full docs before it is shown, and stuck conversations escalate to Jira tickets.
 
 **Consultation Transcript → SOAP Note** — Record or upload Bisaya/Cebuano audio → transcribe with fine-tuned Whisper → auto-generate English SOAP note → extract structured data → verify grounding → save. Includes a past-notes viewer, editor, and export tool.
 
@@ -16,8 +16,17 @@ A pure-Streamlit multipage app for clinic consulting. Combines a documentation-g
 
 Streamlit-only (no backend server or container). All interaction is client-side; conversation logs optionally persist to Supabase. The app is two independent libraries:
 
-- `core/` — Chatbot pipeline (knowledge retrieval, LLM interface, grounding, Jira ticketing)
+- `core/` — Chatbot pipeline (RAG retrieval, LLM interface, grounding, Jira ticketing)
 - `stt/` — STT→SOAP workflow (transcription, note generation, extraction, review, persistence)
+
+**Retrieval.** The assistant is a RAG pipeline. `core/knowledge.py` splits the knowledge base into
+64 `##` / `###` sections; `core/retrieval.py` embeds them with Gemini and keeps them in a persistent
+ChromaDB collection under `logs/chroma/`. Each question is embedded once, the top `RAG_TOP_K` sections
+are pulled by cosine similarity, and only those go into the answer prompt. The index is fingerprinted
+on (docs, LLM backend, embedding model) and rebuilds itself whenever any of the three change, so a
+docs edit can never leave it serving stale text. A stamped `embeddings.json` seeds the index, so a cold
+start builds it without spending embedding quota. The verification pass and the eval judge always read
+the *full* docs, which keeps `USE_RAG=0` a directly comparable fallback.
 
 Both use Gemini for LLM operations and support a deterministic offline mock backend for testing
 
@@ -38,7 +47,7 @@ Both use Gemini for LLM operations and support a deterministic offline mock back
 # Install dependencies (includes test suite)
 pip install -r requirements-dev.txt
 
-# Run tests (109 tests, fully offline, no API keys needed)
+# Run tests (115 tests, fully offline, no API keys needed)
 pytest
 
 # Set up secrets (copy template and fill in your keys)
@@ -66,8 +75,8 @@ Settings are read from environment variables (set in `.streamlit/secrets.toml` o
 | `HF_TOKEN`                | —                                 | **Local/fallback transcription.** Hugging Face API token if using the (slower) serverless Inference API. Ignored if `transformers` is installed locally. |
 | `LLM_BACKEND`             | `gemini`                          | `mock` = deterministic offline mode (no keys, no quota, canned responses). Useful for demos and testing.                                                 |
 | `VERIFY_ANSWERS`          | `1`                               | `0` = skip the chatbot's second-pass verification (costs 1 Gemini call/question).                                                                        |
-| `USE_RAG`                 | `0`                               | `1` = retrieve and inject doc sections into answer prompts.                                                                                              |
-| `RAG_TOP_K`               | `6`                               | Number of doc sections to retrieve per question (only if `USE_RAG=1`).                                                                                   |
+| `USE_RAG`                 | `1`                               | Retrieve the top-K relevant doc sections per question. `0` = put the whole doc in every prompt instead.                                                  |
+| `RAG_TOP_K`               | `6`                               | How many doc sections to retrieve per question. Higher = safer recall, more tokens.                                                                      |
 | `VECTOR_BACKEND`          | `chroma`                          | Where RAG's section embeddings live. `memory` = in-process linear scan, rebuilt each start.                                                              |
 | `VECTOR_DIR`              | `logs/chroma`                     | Directory for the persistent Chroma collection (only if `VECTOR_BACKEND=chroma`).                                                                        |
 | `EMBEDDINGS_SEED`         | `embeddings.json`                 | Pre-computed section embeddings reused on a cold start. Ignored unless its stamped fingerprint matches the current docs.                                 |
@@ -176,7 +185,7 @@ evaluation/
 trial/                           Bisaya audio clips + transcription references (eval fixtures)
 .streamlit/                      Streamlit config (theme) + secrets template
 .github/workflows/               CI configuration
-tests/                           109 pytest tests (mock backend, isolated fixtures)
+tests/                           115 pytest tests (mock backend, isolated fixtures)
 ```
 
 
@@ -186,7 +195,7 @@ tests/                           109 pytest tests (mock backend, isolated fixtur
 All tests are offline (mock backend, no API keys needed):
 
 ```bash
-pytest                  # Run all 109 tests (~5 seconds)
+pytest                  # Run all 115 tests (~5 seconds)
 pytest -v              # Verbose output
 pytest tests/test_bot.py::TestBotAndGrounding::test_something  # Single test
 ```
@@ -219,7 +228,7 @@ See `evaluation/FINDINGS.md` for methodology, limitations, and next steps.
 
 ## Future Improvements
 
-- Replace in-process FAISS with a persistent vector DB (Supabase `pgvector`, Weaviate, etc.)
+- Move the vector index off-box (Supabase `pgvector`, Weaviate) so every deploy shares one collection instead of rebuilding its own
 - Add multi-language support beyond Bisaya/Cebuano
 - Integrate speaker diarization for multi-party consultations
 - Build a real-human evaluation set to quantify LLM-judge bias
@@ -239,6 +248,6 @@ MIT
 - **SOAP note** — Subjective, Objective, Assessment, Plan clinical documentation format
 - **WER/CER** — Word / Character Error Rate (ASR accuracy metrics)
 - **RAG** — Retrieval-Augmented Generation (inject retrieved docs into the LLM prompt)
-- **FAISS** — Meta's approximate nearest-neighbor search library (used for doc retrieval)
+- **ChromaDB** — the local vector database holding the documentation embeddings (`logs/chroma/`)
 - **Jira dedup** — Avoid creating duplicate tickets for the same issue
 

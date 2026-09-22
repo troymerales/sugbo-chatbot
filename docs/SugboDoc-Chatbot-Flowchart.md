@@ -44,32 +44,74 @@ Two constraints drive every choice:
 
 ---
 
-## 0. Architecture decision — the docs fit in context, so RAG is opt-in
+## 0. Architecture decision — retrieval is the default path
 
-`SugboDoc-Documentation.md` is ~8k tokens. Any model worth using has an 8k+ context window.
-So by default the whole doc goes in the prompt, every turn — **no chunking, no vector
-store**. A `USE_RAG=1` toggle (`core/retrieval.py`) switches the *answer* prompt to
-embedding-cosine section retrieval (top-`RAG_TOP_K`); the verification pass and the eval
-judge still see the full docs, so the two modes are interchangeable and the eval scorecard
-records which one produced it. Turn it on around 5–10× the current doc size.
+`USE_RAG` defaults to **1**. Every turn retrieves the top-`RAG_TOP_K` (default 6) `##` / `###`
+sections for the question and injects only those into the answer prompt. Full-context
+(`USE_RAG=0`) is still there as a fallback and as the comparison baseline in the eval.
+
+Be honest about why: `SugboDoc-Documentation.md` is ~8k tokens and *does* fit in context, so
+this is not a cost rescue. It buys two things. **Headroom** — the path that survives the docs
+growing 5–10× is already wired and measured, instead of being a migration done under pressure.
+And **a retrieval stage you can score on its own** — when an answer is wrong you can ask
+whether the right section was even retrieved, a question full-context mode cannot pose. The
+cost is real: retrieval adds a missed-chunk failure mode that full-context does not have. That
+is precisely why `grounding.verify()` and the eval judge still read the **full** docs — a
+section the retriever missed can still be caught downstream, and the two modes stay directly
+comparable.
+
+The embeddings live in a persistent **ChromaDB** collection (`logs/chroma/`, cosine space)
+built by `core/retrieval.py` over the 64 content sections. `VECTOR_BACKEND=memory` swaps in
+the original in-process linear scan; the test suite pins that.
 
 ```mermaid
 flowchart TD
-    Q[How big are the docs?] --> A{Fit comfortably in<br/>the model context?}
-    A -->|yes — default| F1[Full doc in prompt<br/>no retrieval]
-    A -->|USE_RAG=1 / docs 5–10x| F2[Top-K section retrieval<br/>llm.embed + cosine]
-    F1 --> GEN[Gemini — grounded answer]
-    F2 --> GEN
+    Q[User question] --> A{USE_RAG}
+    A -->|1 — default| F2[Top-K section retrieval<br/>Chroma cosine query]
+    A -->|0 — fallback / baseline| F1[Full doc in prompt<br/>no retrieval]
+    F2 --> GEN[Gemini — grounded answer]
+    F1 --> GEN
     GEN --> VER[Verification pass + eval judge<br/>always see the full docs]
     VER --> EVAL[Evaluation harness<br/>scores both modes]
 
-    style F1 fill:#2f855a,stroke:#1a4731,color:#fff
+    style F2 fill:#2f855a,stroke:#1a4731,color:#fff
     style EVAL fill:#2b6cb0,stroke:#1a365d,color:#fff
 ```
 
-The data science in this project is **not** in the retrieval stack. It's in (a) detecting
-when a chat failed, (b) generating a useful ticket, and (c) mining failures to prioritise
-doc work. Those are §2, §3, §6, §7.
+### The index, and why it rebuilds itself
+
+An embedding is opaque — nothing in the vector says which text produced it. So the collection
+is stamped with a **fingerprint**: `sha256(LLM_BACKEND + EMBED_MODEL + docs text)[:16]`. On
+every build it is recomputed and compared; any mismatch drops the collection and re-indexes.
+That is what stops the mock backend's 256-dim vectors being queried with Gemini's 3072-dim
+ones, and what stops an edited doc being served from stale vectors.
+
+`embeddings.json` at the repo root is a **stamped seed** of pre-computed `gemini-embedding-001`
+vectors (3072 dims). When its fingerprint matches, the index is built from it with *zero*
+embedding API calls; when it does not, it is ignored and the sections are embedded again.
+`stamp_embeddings.py` regenerates the stamp after the docs or the embedding model change.
+
+The failure mode is deliberately asymmetric: a stale seed costs quota, never correctness.
+
+```mermaid
+flowchart TD
+    B[Build index] --> FP[Compute fingerprint<br/>backend + model + docs]
+    FP --> C{Matches the<br/>collection's stamp?}
+    C -->|yes| USE[Query it — nothing to rebuild]
+    C -->|no| DROP[Drop + re-index]
+    DROP --> S{embeddings.json<br/>stamp matches?}
+    S -->|yes| SEED[Load 64 vectors from seed<br/>0 API calls]
+    S -->|no| EMB[Embed sections via Gemini]
+    SEED --> USE
+    EMB --> USE
+
+    style SEED fill:#2f855a,stroke:#1a4731,color:#fff
+    style DROP fill:#2b6cb0,stroke:#1a365d,color:#fff
+```
+
+The data science here is **not only** in the retrieval stack — retrieval is now a measurable
+stage, but the bulk is still (a) detecting when a chat failed, (b) generating a useful ticket,
+and (c) mining failures to prioritise doc work. Those are §2, §3, §6, §7.
 
 ---
 
@@ -78,7 +120,8 @@ doc work. Those are §2, §3, §6, §7.
 ```mermaid
 flowchart TD
     U[User question] --> H[Prepend last few turns]
-    H --> P[Prompt = full docs<br/>+ answer rules + question]
+    H --> R[Retrieve top-K sections<br/>Chroma cosine query]
+    R --> P[Prompt = retrieved sections<br/>+ answer rules + question]
     P --> GEN[Gemini answer model<br/>answer + cite section]
     GEN --> VER[Verification pass<br/>Gemini utility model:<br/>is every sentence in the docs?]
     VER -->|supported| ANS[Answer + section link]
@@ -305,10 +348,10 @@ repeat-question rate).
 | Not used | Textbook reason to use it | Why it loses here |
 |---|---|---|
 | **Per-request Jira retrieval / RAG over tickets** | "Feed operational context into every answer" | The bot answers from docs; tickets are a *write* target. Reading tickets per turn adds latency, a sync pipeline, and stale-status risk for zero benefit. Jira reaches the bot only via **Jira → docs → bot**. |
-| Vector DB for the docs (default) | "RAG needs embeddings" | Docs are ~8k tokens — the whole thing fits in the prompt. `USE_RAG=1` enables a lightweight local retrieval path (`llm.embed` + cosine, no ChromaDB/FAISS needed) for when the corpus grows; the eval harness scores both modes. |
+| ~~Vector DB for the docs~~ *(now used)* | "RAG needs embeddings" | **Reversed.** Retrieval is the default path (§0) and the sections live in a persistent ChromaDB collection. The docs would still fit in a prompt, so the win is headroom plus a retrieval stage that can be scored on its own — not cost. `USE_RAG=0` keeps full-context as the baseline, and the eval harness scores both. |
 | Dissatisfaction / sentiment classifier (day one) | Detect failed chats | The bot's own refusal + a thumbs-down button catch most failures with zero ML. Train a classifier only once rules are demonstrably missing failures. |
 | Classifier for suggested Jira issue type | Auto-file with the right type | Let the LLM suggest it in the draft; the reviewer corrects it. Track accuracy, don't train a model for a field a human approves anyway. |
-| Cross-encoder reranker | Best-in-class reranking | Nothing to rerank — no retrieval in the inference path. |
+| Cross-encoder reranker | Best-in-class reranking | There *is* now something to rerank, but at 64 sections and top-6 the embedding ranking is not the bottleneck. Revisit once the eval shows the right section being retrieved but ranked below the cut. |
 | TextTiling / embedding topic segmentation | Automatic passage boundaries | `chapters.txt` is already a human segmentation. |
 | SymSpell / Levenshtein + seq2seq punctuation restoration | Clean noisy ASR | Re-running Whisper fixes it at the source; one LLM pass handles the rest. |
 | NLI entailment model for groundedness | Verify answers are supported | A rubric-based Ollama verification pass is simpler and reuses infra you already have. |
@@ -339,12 +382,12 @@ repeat-question rate).
 
 ```mermaid
 flowchart LR
-    M0[M0<br/>Clean docs<br/>+ 80–120 Q&A eval set<br/>incl. 'must refuse' slice] --> M1[M1<br/>Inference bot<br/>full docs + verification pass]
+    M0[M0<br/>Clean docs<br/>+ 80–120 Q&A eval set<br/>incl. 'must refuse' slice] --> M1[M1<br/>Inference bot<br/>RAG + verification pass]
     M1 --> M2[M2<br/>Eval harness + scorecard]
     M2 --> M3[M3<br/>Failure capture + thumbs feedback<br/>logging live]
     M3 --> M4[M4<br/>Ticket generation + Jira append<br/>with human review]
     M4 --> M5[M5<br/>Failure clustering<br/>→ docs maintenance loop]
-    M5 --> M6[M6<br/>Triage model / retrieval<br/>only if the scorecard demands it]
+    M5 --> M6[M6<br/>Reranker / triage model<br/>only if the scorecard demands it]
 ```
 
 Ship a measurable baseline at **M1**; stand up evaluation at **M2** before anything else —
@@ -356,14 +399,14 @@ every later change is judged against the frozen scorecard.
 
 | Stage | Data science competency on display |
 |---|---|
-| §0 architecture choice | Recognising the docs fit in context — knowing when retrieval is premature |
+| §0 architecture choice | Making retrieval the default and justifying it on headroom + measurability rather than cost; fingerprinting the index so a docs or model change can never serve stale vectors |
 | §2 failure capture | Failure-signal design, precision/recall per signal, triage classification, knowing when rules beat a model |
 | §3 ticket generation | Generation-quality metrics (edit distance, acceptance rate), embedding dedup, threshold tuning |
 | §4 docs maintenance | Failure clustering, impact ranking, eval-case-before-merge discipline, regression tracking |
 | §6 evaluation | Eval-set design (incl. refusal slice), LLM-judge calibration (κ) with a local judge, bootstrap inference, frozen scorecard |
 | §7 analytics | Embedding clustering (HDBSCAN), impact scoring, coverage-gap analysis, drift checks, product analytics |
 | §1 inference | Prompt/rubric design measured against eval, verification-pass tuning to compensate for a weaker base model |
-| §8 scoping | Judgement about what to leave out — *no per-request Jira retrieval, no vector DB, no classifier for data a human approves* |
+| §8 scoping | Judgement about what to leave out — *no per-request Jira retrieval, no reranker, no classifier for data a human approves* — and about revisiting a call (the vector DB) once the reasoning changed |
 
 The strongest signal is §6 and §8: a rigorous evaluation harness, and the discipline to keep
 the inference path trivial and put the intelligence into the feedback loop that improves the
@@ -381,13 +424,13 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 
 | File | Responsibility | Stage |
 |---|---|---|
-| `config.py` *(root)* | Paths, model names, thresholds, feature toggles (`USE_RAG`, `LLM_BACKEND`, `DATABASE_URL`), one-time `.env` load | — |
+| `config.py` *(root)* | Paths, model names, thresholds, feature toggles (`USE_RAG` (default 1), `RAG_TOP_K`, `VECTOR_BACKEND`, `VECTOR_DIR`, `EMBEDDINGS_SEED`, `LLM_BACKEND`, `DATABASE_URL`), one-time `.env` load | — |
 | `core/llm.py` | The one model interface: `generate`, `new_chat`/`Chat.send`, `embed`; SQLite response cache; offline mode; quota-aware `retry` + `QuotaError` | — |
 | `core/_gemini_backend.py` | Real Gemini SDK calls (lazy-imported by `llm.py`) | — |
 | `core/_mock_backend.py` | Offline deterministic stand-in — no API key / quota | — |
-| `core/knowledge.py` | Load docs, split into 60+ `Section`s, assemble the system prompt (full docs, or RAG sections) | §0, §5 |
-| `core/retrieval.py` | `USE_RAG` mode: embed sections (`llm.embed`) + cosine rank → top-K | §0 |
-| `core/bot.py` | `respond()` — the one answer path: (RAG re-ground) → answer model → verification → refuse-or-answer | §1 |
+| `core/knowledge.py` | Load docs, split into 64 content `Section`s, assemble the system prompt (retrieved sections by default; full docs when `USE_RAG=0`) | §0, §5 |
+| `core/retrieval.py` | The default retrieval path: persistent ChromaDB collection (`VECTOR_DIR`), fingerprinted against docs + backend + embed model, seeded from `embeddings.json` when it matches; `top_sections(query, k)` / `rank_sections(query)`. `VECTOR_BACKEND=memory` = in-process linear scan | §0 |
+| `core/bot.py` | `respond()` — the one answer path: RAG re-ground → answer model → verification → refuse-or-answer | §1 |
 | `core/grounding.py` | The verification pass (`verify()` → `GroundingVerdict`), always vs full docs | §1 |
 | `core/failure_capture.py` | Rule-based `detect_failures()` → `FailureSignals` (`.as_list()` short names + `.reasons` prose, both logged); no model call — triage was removed for cost | §2 |
 | `core/ticketing.py` | `default_draft()` (no model call — subject = first question), `as_iso_date()` / `urgency_for_date()` for the due-date picker | §3 |
@@ -406,7 +449,7 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `streamlit run app.py` | Streamlit demo UI: full inference path + feedback loop + modal ticket flow + logging | §1–§3 |
 | `uvicorn api.service:app` | FastAPI backend — serves the dashboard mockup + floating chat widget (`/`), a markdown docs viewer with section nav (`/documentation`), and the JSON API (`/chat`, `/feedback`, `/tell-me-more`, `/ticket*`, `GET\|DELETE /session/{id}`, `/widget/config`, `/healthz`). Sessions in memory, or Postgres if `DATABASE_URL` is set. Widget shows the greeting on open and renders every reply by diffing `state.messages` | §1–§3 |
 | `python -m api.db_init` | Create the `conversations` / `chat_logs` schema (`--check`, `--drop`) | setup |
-| `python -m evaluation.eval_run` | Run the pipeline over `eval_set.jsonl`, LLM-judge, write `eval_scorecard.md/.json` (bootstrap CIs; records full-context vs RAG). `--calibrate` → Cohen's κ; `--no-judge` / `--mock` / `--offline` | §6 |
+| `python -m evaluation.eval_run` | Run the pipeline over `eval_set.jsonl`, LLM-judge, write `eval_scorecard.md/.json` (bootstrap CIs; records which retrieval mode produced the card). `--calibrate` → Cohen's κ; `--no-judge` / `--mock` / `--offline` | §6 |
 | `python -m evaluation.eval_gen` | Draft synthetic eval questions from each doc section → `evaluation/eval_generated.jsonl` | §6 |
 | `python -m analytics.analytics_kpis` | Containment / thumbs / refusal / repeat-question KPIs from the log (no model calls) | §7 |
 | `python -m analytics.analytics_cluster` | Embed failed questions → HDBSCAN → label → impact score → `logs/doc_gap_queue.json` | §7 |
@@ -415,7 +458,7 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `python -m scripts.llm_cache` | Inspect / `--clear` the response cache | — |
 | `python -m core.chatlog` | Rebuild `logs/chats.csv` from the primary store (a flat CSV mirror is also written on every log) | — |
 | `python -m scripts.jira_check` | Standalone connectivity + createmeta field check (`--create-test` files a throwaway) | setup |
-| `pytest` | 83 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
+| `pytest` | 115 offline tests (mock backend, tmp paths; DB tests use throwaway SQLite) | — |
 
 ### Data files
 
@@ -430,6 +473,8 @@ Postgres), `evaluation/`, `analytics/`, `scripts/`; `config.py` and `app.py` at 
 | `logs/chats.jsonl` | gitignored | conversation log, upserted per `conversation_id` (unless `DATABASE_URL` → `chat_logs` table) |
 | `logs/chats.csv` | gitignored | flat one-row-per-conversation mirror, written on every log regardless of store |
 | `api/schema.sql` | yes | raw DDL for the Postgres backend — mirror of `api/db.py` |
+| `embeddings.json` *(root)* | untracked | stamped seed of pre-computed Gemini section vectors; builds the index with zero API calls while its fingerprint matches (`python stamp_embeddings.py` to re-stamp) |
+| `logs/chroma/` | gitignored | the persistent ChromaDB collection — rebuilt automatically whenever the fingerprint changes |
 | `logs/llm_cache.sqlite` | gitignored | response cache (warm it once, then `--offline`) |
 | `logs/doc_gap_queue.json` | gitignored | impact-ranked output of `analytics_cluster.py` |
 | `doc_proposals/*.md` | gitignored | draft doc changes for human review |
@@ -457,7 +502,7 @@ flowchart LR
 
 ```
 pip install -r requirements-dev.txt
-pytest                                   # 83 offline tests (~2s)
+pytest                                   # 115 offline tests (~5s)
 
 cp .env.example .env                     # add GEMINI_API_KEY (+ JIRA_* for ticketing)
 streamlit run app.py                     #  or:  LLM_BACKEND=mock streamlit run app.py
@@ -477,8 +522,11 @@ export DATABASE_URL=postgresql://user:pass@localhost:5432/sugbodoc
 python -m api.db_init                    # create conversations + chat_logs
 uvicorn api.service:app --reload
 
-# try RAG mode:
-USE_RAG=1 python -m evaluation.eval_run --mock --no-judge --limit 10
+# RAG is the default; compare against the full-context baseline:
+USE_RAG=0 python -m evaluation.eval_run --mock --no-judge --limit 10
+
+# re-stamp the embedding seed after editing the docs:
+python stamp_embeddings.py
 ```
 
 **Free-tier note:** Gemini caps requests/day per model. `eval_run.py` is ~2 calls/case

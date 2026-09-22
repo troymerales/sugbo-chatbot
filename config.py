@@ -107,17 +107,20 @@ DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "5"))
 DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "2"))
 
 # --------------------------------------------------------------------------- #
-# Retrieval  (RAG toggle — see core/retrieval.py and core/knowledge.py)
+# Retrieval  (RAG — see core/retrieval.py and core/knowledge.py)
 # --------------------------------------------------------------------------- #
 
-# False (default): the whole documentation (~8k tokens) goes in the answer
-#   model's system prompt every turn — simplest, and fine at this doc size.
-# True: only the top-K most relevant ## / ### sections are retrieved (embedding
-#   cosine) and injected. The verification pass and the eval judge still see the
-#   full docs, so both modes are drop-in compatible with the rest of the pipeline.
+# True (default): retrieval is the answer model's path to the docs. Only the
+#   top-RAG_TOP_K most relevant ## / ### sections are embedded, ranked by cosine
+#   similarity and injected into the system prompt for that question.
+# False: the whole documentation goes in the prompt every turn instead. Kept as a
+#   fallback and as the comparison baseline for the eval harness.
+# The verification pass and the eval judge read the full docs in BOTH modes, so
+# the two stay drop-in compatible and directly comparable.
 USE_RAG = os.environ.get("USE_RAG", "1") == "1"
 
-# How many sections RAG injects into the answer prompt when USE_RAG is True.
+# How many sections RAG injects into the answer prompt. Higher = more context and
+# less chance of missing the relevant section, at more tokens per turn.
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "6"))
 
 # Where the section embeddings live once RAG is on.
