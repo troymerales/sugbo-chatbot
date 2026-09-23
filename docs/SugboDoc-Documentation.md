@@ -21,12 +21,6 @@ dedicated sidebar modules.
 
 ---
 
-> **Sample excerpt.** This repo ships a trimmed public excerpt of the SugboDoc
-> knowledge base so the assistant, the tests, and the eval harness run out of the
-> box. The full documentation is swapped in privately by placing it at
-> `docs/SugboDoc-Documentation.md` (which is git-ignored); `config.DOCS_PATH`
-> uses that file when present and falls back to this excerpt otherwise.
-
 
 
 ## Table of contents
@@ -636,6 +630,292 @@ and voids for a specific patient.
 
 ---
 
-*(Excerpt ends here. The full knowledge base continues with Charges, Staff
-Management, Departments, Resources, Locations, Document Templates and
-Subscriptions.)*
+
+
+## Charges (Bills & Payments setup)
+
+*Chapter: Charge Creation [35:04]*
+
+Defines the reusable fees that can be added to invoices. Managed under the global
+**Bills and Payments** module (not the patient record).
+
+1. Sidebar → **Bills and Payments** → **List of charge groups**.
+2. Click **Add charge**.
+3. Enter the **charge name** and **description**.
+4. Choose a **price type**:
+  - **Fixed amount** — a set fee that stays constant for a service.
+  - **Variable amount** — a fee that varies with services provided. Further
+  classified as **fixed limit** or **percentage limit**.
+5. For a fixed amount, input the **amount** to charge the patient.
+6. Select the **category**.
+7. Choose the **charge type**.
+8. Optionally select a **practitioner** the charge applies to.
+9. Choose whether the charge is **bookable** or not.
+10. Save.
+
+---
+
+
+
+## Staff Management
+
+*Chapters: Clerk Account Creation [36:16], Nurse Account Creation [37:02]*
+
+Sidebar → **Staff Management**, then the relevant staff category.
+
+### Add a clerk
+
+1. **Staff Management** → **Clerk** → **Add clerk**.
+2. Enter personal details: **name, contact details, address**. Add a **profile
+  photo** (optional).
+3. Click **Submit**. A confirmation message appears.
+4. The clerk receives an **email with login credentials and a temporary
+  password**.
+
+
+
+### Add a nurse
+
+1. **Staff Management** → **Nurse** → **Add nurse**.
+2. Enter personal details: **name, contact details, address, birthday, license
+  number**.
+3. Indicate whether the nurse is **bookable**.
+4. Enter the **consultation fees**. Add a **profile photo** (optional).
+5. Click **Submit**. A confirmation message appears.
+6. A **verification process** is required before the nurse can fully use the
+  account.
+
+---
+
+
+
+## Departments
+
+*Chapter: (labeled "Edit Diagnosis") — Add Department [37:56]*
+
+Sidebar → **Department** → **Add department**. Two ways to add:
+
+### From the list
+
+1. Browse the available list and select a department.
+2. Modify the **description** if needed.
+3. Click **Use** to add it.
+
+
+
+### Create a new department
+
+1. Click **Create department**.
+2. In the modal, enter the **department name** → **Confirm**.
+3. The new department appears at the top of the list under **Previously created
+  department**.
+4. Click it to add a **description** → **Confirm**.
+
+---
+
+
+
+## Resources
+
+*Chapters: Add Resource Classification [39:04], Edit Resource Classification
+[40:08], Add Resource Type [41:08], Add Resource [42:37], Edit Resource [43:58]*
+
+Sidebar → **Resource**. The module has two options: **Management** and
+**Appointment**. Resource setup is done under **Management**.
+
+**Hierarchy:** Classification → Resource type → Resource.
+
+### Add a resource classification
+
+1. **Resource** → **Management** → **Add classification**.
+2. In the *Add resource classification* off-canvas:
+  - **Enable pricing** toggle — turn on to activate pricing for the resource
+   types under this classification.
+  - **Classification name**.
+  - **Description**.
+3. Review → **Save**.
+
+
+
+### Edit a resource classification
+
+1. **Resource management** screen → click the classification (shows its
+  **inclusions**).
+2. **Edit** (right side) → *Edit resource classification* off-canvas.
+3. All fields are editable (e.g. update the **icon** and **description**).
+4. Review → **Save**.
+
+
+
+### Add a resource type
+
+1. **Resource management** → click the classification to show its inclusions.
+2. **Add resource type** → modal opens.
+3. Tag the resource type:
+  - **To use** — resources with a short time duration (e.g. dialysis machine).
+  - **To occupy** — resources billed at a daily rate (e.g. beds).
+4. Enter the **resource type name**.
+5. **Price per category** — choose **daily**, **distance**, or **usage**.
+6. Input the **pricing details**.
+7. Add a **resource type description**.
+8. Review → **Save**.
+
+
+
+### Add a resource
+
+1. **Resource management** → click the classification to show inclusions.
+2. Find the target resource type → **three dots** → **Add resource** →
+  off-canvas opens.
+3. Fill in:
+  - **Resource name**
+  - **Department** and **Location**
+  - **Apply prices from resource type** checkbox — check to inherit the resource
+  type's pricing; leave unchecked to enter pricing manually.
+  - **Resource description**
+  - **Make this resource a location** checkbox — check to designate the resource
+  as a location.
+4. Review → **Save**.
+
+
+
+### Edit a resource
+
+1. **Resource management** → click the classification to show inclusions.
+2. Expand the resource type (**drop-down icon**) to list its resources.
+3. Find the resource → **three dots** → **Edit** → off-canvas opens.
+4. All fields are editable **except the resource type** (e.g. update **resource
+  number**, **pricing**, **description**).
+5. Review → **Save**.
+
+---
+
+
+
+## Locations (Branches)
+
+*Chapters: Add Internal Location [45:08], Add External Location [46:31], Update
+Location Details [47:41]*
+
+Sidebar → **Location**. Options: **All** and **Branches**. Branch setup is under
+**Branches**, which has two tabs:
+
+
+| Tab          | Meaning                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------- |
+| **Internal** | Your other locations where consultations or facility operations take place.                 |
+| **External** | Locations where practitioners are only affiliated for other activities (rounds, surgeries). |
+
+
+
+
+### Add an internal location
+
+1. **Location** → **Branches** → **Internal** tab.
+2. Click **Add new** → *Add new internal location* modal.
+3. Fill in: **display name, phone number, street address, country, state,
+  province, city, municipality, postal code**.
+4. Review → **Add**.
+
+
+
+### Add an external location
+
+1. **Location** → **Branches** → **External** tab.
+2. Click **Add new external location** → modal opens.
+3. Fill in the same fields: **display name, phone number, street address,
+  country, state, province, city, municipality, postal code**.
+4. Review → **Add**.
+
+
+
+### Update location details
+
+1. **Location** → **Branches** → select the tab (e.g. Internal).
+2. Find the location → **three dots** → **Edit** → modal opens.
+3. All fields are editable (e.g. update **display name**, add a **phone
+  number**).
+4. Review → **Update**.
+
+---
+
+
+
+## Facility Settings — Document Templates
+
+*Chapters: Practitioner Header [48:44], Facility Header [50:01]*
+
+Sidebar → **Facility Settings** → **Document Templates**. Configures the header
+shown on generated documents (per practitioner).
+
+**Common steps**
+
+1. **Facility Settings** → **Document Templates**.
+2. Select a **practitioner** from the drop-down.
+3. Choose the **record** to configure — selecting *any record* auto-populates all
+  available records.
+4. Choose which **header display** to configure: **Practitioner header** or
+  **Facility header**.
+
+
+
+### Practitioner header
+
+- **Custom hours** toggle — turn on to set specific availability and indicate the
+schedule.
+- **Auto add signature** toggle — turn on to include the e-signature
+automatically.
+- Upload a **logo**.
+- Input the **S2 license number** (if applicable).
+- Use **Preview record** on the sample record to check the result.
+
+
+
+### Facility header
+
+- **Auto add signature** toggle — turn on to display the e-signature.
+- Upload a **logo**.
+- **Show S2** toggle — off by default; turn on to display the S2 license and
+input details.
+- **Show PTR** toggle — off by default; turn on to show PTR details.
+- Review on the **Preview** screen.
+
+---
+
+
+
+## Subscriptions
+
+*Chapters: Subscriptions — Payment [51:19], Subscriptions — Add on [52:14]*
+
+Sidebar → **Subscription**.
+
+### Pay the monthly subscription
+
+1. **Subscription** module → **Prepaid** button.
+2. In the *Prepaid* modal, choose **existing payment method** or **another
+  payment method** (existing is used here for convenience).
+3. If the package has previously added add-ons, a confirmation asks whether to
+  **include the add-ons** in this payment.
+4. Click **Proceed** to finalize. The monthly subscription is paid, keeping
+  access to subscription services and included add-ons.
+
+
+
+### Add more services / add-ons
+
+1. **Subscription** module → **Get more services**.
+2. Browse available services and add-ons (e.g. **staff**, **imaging studies
+  storage**, **branches**).
+3. **Add more staff**: on the **Staff** card → **See packages** → in the *Add
+  staff* modal, adjust the **quantity** (e.g. **+** to add two doctors) →
+   **Add**.
+4. **Add more branches**: on the **Add branches** card → **See packages** →
+  adjust the **quantity** → **Add**.
+5. Scroll to the bottom → **Checkout**.
+6. On the checkout screen, review the add-ons, quantities, and total.
+7. Choose an **existing** or **new payment method** → **Pay**.
+
+---
+
+*End of documentation.*

@@ -14,9 +14,8 @@ chapters.txt
 transcript.txt
 tickets.csv
 
-# full knowledge base (private). The committed
-# docs/SugboDoc-Documentation.sample.md excerpt is the fallback (config.DOCS_PATH).
-docs/SugboDoc-Documentation.md
+# The knowledge base itself is committed (config.DOCS_PATH) so every clone, CI
+# run and deploy grounds on the same text. These two stay private:
 docs/system-prompt.md
 docs/homepage-reference.png
 

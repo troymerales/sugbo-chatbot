@@ -172,7 +172,7 @@ web/
 docs/
   PROJECT.md                     Detailed architecture and module reference
   SugboDoc-Chatbot-Flowchart.md  Chatbot design diagrams and examples
-  SugboDoc-Documentation.sample.md   Public knowledge base excerpt (fallback)
+  SugboDoc-Documentation.md      The knowledge base the assistant is grounded on
 
 evaluation/
   backtest.py                    Deflection-rate evaluation engine

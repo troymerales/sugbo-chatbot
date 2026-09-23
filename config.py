@@ -12,26 +12,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# --------------------------------------------------------------------------- #
-# Paths
-# --------------------------------------------------------------------------- #
-
 ROOT = Path(__file__).resolve().parent
 
-# Load .env from the project root explicitly — not "wherever the process was
-# started from". Running `uvicorn api.service:app` from another directory would
-# otherwise silently miss it, and the backend would fall back to in-memory
-# sessions + logs/chats.jsonl instead of Postgres.
 load_dotenv(ROOT / ".env", override=True)
 
 DOCS_DIR = ROOT / "docs"
 
-# The knowledge base the assistant is grounded on. The full document is
-# git-ignored (swap yours in at `docs/SugboDoc-Documentation.md`); the committed
-# `.sample.md` excerpt is the fallback so a fresh clone / CI runs out of the box.
+# The knowledge base the assistant is grounded on. Committed, so every clone,
+# CI run and deploy grounds on exactly the same text the embeddings in
+# embeddings.json were built from. knowledge.load_docs() raises if it is missing.
 DOCS_PATH = DOCS_DIR / "SugboDoc-Documentation.md"
-if not DOCS_PATH.exists():
-    DOCS_PATH = DOCS_DIR / "SugboDoc-Documentation.sample.md"
 
 # logs/ holds the local chat-log JSONL + its CSV mirror and the LLM response
 # cache. On a read-only or ephemeral host (Streamlit Community Cloud) fall back
