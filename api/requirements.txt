@@ -1,0 +1,6 @@
+# The REST layer only. The Streamlit app does not need these.
+#   pip install -r requirements.txt -r api/requirements.txt
+#   uvicorn api.service:app --reload
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9   # /stt/transcribe takes a file upload
