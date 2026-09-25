@@ -58,14 +58,6 @@ def fingerprint() -> str:
 # Backends
 # --------------------------------------------------------------------------- #
 
-@functools.lru_cache(maxsize=1)
-def _memory_index() -> tuple[tuple[knowledge.Section, tuple[float, ...]], ...]:
-    """Every content section paired with its embedding. Built once per process."""
-    secs = knowledge.content_sections()
-    vecs = llm.embed([_embed_text(s) for s in secs])
-    return tuple((sec, tuple(vec)) for sec, vec in zip(secs, vecs))
-
-
 def _seed_vectors(
     secs: tuple[knowledge.Section, ...], fp: str
 ) -> list[list[float]] | None:
@@ -88,6 +80,16 @@ def _seed_vectors(
     except (OSError, ValueError, KeyError, TypeError) as exc:
         log.warning("ignoring embedding seed %s: %s", path, exc)
         return None
+
+
+@functools.lru_cache(maxsize=1)
+def _memory_index() -> tuple[tuple[knowledge.Section, tuple[float, ...]], ...]:
+    """Every content section paired with its embedding. Built once per process."""
+    secs = knowledge.content_sections()
+    vecs = _seed_vectors(secs, fingerprint())
+    if vecs is None:
+        vecs = llm.embed([_embed_text(s) for s in secs])
+    return tuple((sec, tuple(vec)) for sec, vec in zip(secs, vecs))
 
 
 _collection_cache: tuple[str, object] | None = None  # (fingerprint, collection)

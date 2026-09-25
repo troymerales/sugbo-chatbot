@@ -1,3 +1,4 @@
 # dev / test only
 -r requirements.txt
+-r requirements-vector.txt   # so CI exercises the Chroma path too
 pytest>=8.0

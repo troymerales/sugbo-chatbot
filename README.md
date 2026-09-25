@@ -20,13 +20,15 @@ Streamlit-only (no backend server or container). All interaction is client-side;
 - `stt/` — STT→SOAP workflow (transcription, note generation, extraction, review, persistence)
 
 **Retrieval.** The assistant is a RAG pipeline. `core/knowledge.py` splits the knowledge base into
-64 `##` / `###` sections; `core/retrieval.py` embeds them with Gemini and keeps them in a persistent
-ChromaDB collection under `logs/chroma/`. Each question is embedded once, the top `RAG_TOP_K` sections
-are pulled by cosine similarity, and only those go into the answer prompt. The index is fingerprinted
-on (docs, LLM backend, embedding model) and rebuilds itself whenever any of the three change, so a
-docs edit can never leave it serving stale text. A stamped `embeddings.json` seeds the index, so a cold
-start builds it without spending embedding quota. The verification pass and the eval judge always read
-the *full* docs, which keeps `USE_RAG=0` a directly comparable fallback.
+64 `##` / `###` sections; `core/retrieval.py` embeds them with Gemini, and each question is embedded
+once so the top `RAG_TOP_K` sections can be pulled by cosine similarity — only those go into the
+answer prompt. Section vectors come from the committed `embeddings.json`, which is stamped with a
+fingerprint of (docs, LLM backend, embedding model), so a docs edit can never leave the index serving
+stale text and a cold start costs no embedding quota. The verification pass and the eval judge always
+read the *full* docs, which keeps `USE_RAG=0` a directly comparable fallback.
+
+The index itself is an in-process linear scan by default — see
+[Vector backend](#vector-backend-memory-vs-chroma) for why, and when to switch.
 
 Both use Gemini for LLM operations and support a deterministic offline mock backend for testing
 
@@ -44,8 +46,10 @@ Both use Gemini for LLM operations and support a deterministic offline mock back
 ### Local Development
 
 ```bash
-# Install dependencies (includes test suite)
+# Install dependencies (includes the test suite and the optional Chroma backend)
 pip install -r requirements-dev.txt
+
+# Production installs only requirements.txt — no chromadb, see "Vector backend" below
 
 # Run tests (115 tests, fully offline, no API keys needed)
 pytest
@@ -77,14 +81,51 @@ Settings are read from environment variables (set in `.streamlit/secrets.toml` o
 | `VERIFY_ANSWERS`          | `1`                               | `0` = skip the chatbot's second-pass verification (costs 1 Gemini call/question).                                                                        |
 | `USE_RAG`                 | `1`                               | Retrieve the top-K relevant doc sections per question. `0` = put the whole doc in every prompt instead.                                                  |
 | `RAG_TOP_K`               | `6`                               | How many doc sections to retrieve per question. Higher = safer recall, more tokens.                                                                      |
-| `VECTOR_BACKEND`          | `chroma`                          | Where RAG's section embeddings live. `memory` = in-process linear scan, rebuilt each start.                                                              |
-| `VECTOR_DIR`              | `logs/chroma`                     | Directory for the persistent Chroma collection (only if `VECTOR_BACKEND=chroma`).                                                                        |
+| `VECTOR_BACKEND`          | `memory`                          | In-process cosine scan. `chroma` swaps in a persistent ChromaDB index — see below.                                                                       |
+| `VECTOR_DIR`              | `logs/chroma`                     | Where the Chroma collection lives (only if `VECTOR_BACKEND=chroma`).                                                                                     |
 | `EMBEDDINGS_SEED`         | `embeddings.json`                 | Pre-computed section embeddings reused on a cold start. Ignored unless its stamped fingerprint matches the current docs.                                 |
 | `DATABASE_URL`            | —                                 | Supabase connection string (Session pooler). Chat logs persist to `chat_logs` table. Without it, logs go to local JSONL.                                 |
 | `JIRA_*`                  | —                                 | Jira Cloud credentials for ticket creation. Omit to disable ticketing.                                                                                   |
 | `BISAYA_WHISPER_MODEL_ID` | `troxyz1268/whisper-small-bisaya` | HuggingFace checkpoint ID for the fine-tuned Whisper model.                                                                                              |
-| `GEMINI_MODEL`            | `gemini-3.6-flash`                | LLM model for chatbot answers and SOAP generation.                                                                                                       |
+| `GEMINI_MODEL`            | `gemini-3.1-flash-lite`           | LLM model for chatbot answers and SOAP generation.                                                                                                       |
 | `BISAYA_DB_PATH`          | `soap_notes.db`                   | SQLite file for storing SOAP notes (local only; Streamlit Community Cloud instance wipes it on reboot).                                                  |
+
+### Vector backend: memory vs chroma
+
+**Leave it alone unless the knowledge base grows.** `VECTOR_BACKEND=memory` (the default) keeps the
+section vectors in process and scans them linearly. At 64 sections that is ~30 ms per question, against
+a ~370 ms embedding round-trip you pay either way — so the index is 8% of retrieval and invisible.
+
+ChromaDB costs **~2.4 s just to import** on a cold process, to save ~30 ms per query. On Streamlit
+Community Cloud, where the filesystem is ephemeral and the app sleeps, that import is paid on every
+wake and the on-disk index is thrown away anyway. You would need ~100 questions per container
+lifetime to break even.
+
+Both backends return **identical rankings** — same embeddings, same cosine, same order.
+`tests/test_retrieval_chroma.py` asserts it. This is an implementation swap, not a quality choice.
+
+**When to switch.** Scan time is linear in section count:
+
+| Sections | Scan |
+|---|---|
+| 64 (today) | 30 ms |
+| 256 | 129 ms |
+| 1024 | 499 ms |
+| 4096 | 1917 ms |
+
+Around **500 sections** the scan starts rivalling the embedding round-trip; past **1000** it doubles
+your retrieval stage and shows up in time-to-first-token. You do not have to guess — `retrieval_ms`
+is logged per turn in `evaluation/results/latency_log.csv` by `evaluation/latency_benchmark.ipynb`.
+When that median climbs, switch:
+
+```bash
+pip install -r requirements-vector.txt
+VECTOR_BACKEND=chroma
+```
+
+Nothing else changes. The Chroma path stays covered by CI (`requirements-dev.txt` installs it), so it
+does not rot while unused.
+
 
 
 See `.env.example` and `.streamlit/secrets.toml.example` for complete, commented templates.

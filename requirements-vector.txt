@@ -1,0 +1,5 @@
+# Optional: the ChromaDB backend for core/retrieval.py (VECTOR_BACKEND=chroma).
+# Not needed for the default in-process scan — see config.VECTOR_BACKEND for
+# when it starts paying for itself. Pulls onnxruntime + kubernetes + grpc,
+# ~160 MB, and ~2.4 s of import time on a cold process.
+chromadb>=1.0

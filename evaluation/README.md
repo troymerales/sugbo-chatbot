@@ -10,6 +10,7 @@ path unchanged.
 ```
 evaluation/
 ├── jira_backtest.ipynb        the experiment (run this)
+├── latency_benchmark.ipynb    RAG vs full-context turn latency, measured stage by stage
 ├── backtest.py                reusable engine — loading, running, evaluating, metrics, plots
 ├── dashboard_mock.py          read-only Streamlit dashboard — the deployable demo (simulated data)
 ├── mock_results/              committed synthetic results the demo dashboard reads
@@ -22,7 +23,9 @@ evaluation/
     ├── evaluations.csv         phase-2 output (resumable checkpoint)
     ├── backtest_results.csv    merged, one row per evaluated ticket
     ├── manual_review_sample.csv sample for human validation (+ judge_correct column)
-    └── summary_metrics.json    headline numbers + full run config
+    ├── summary_metrics.json    headline numbers + full run config
+    └── latency_log.csv         cumulative per-turn timings (append-only, resumable
+                                across sessions - survives a quota cut-off)
 ```
 
 ## Quick start

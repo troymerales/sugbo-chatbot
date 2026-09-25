@@ -114,12 +114,16 @@ USE_RAG = os.environ.get("USE_RAG", "1") == "1"
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "6"))
 
 # Where the section embeddings live once RAG is on.
-#   "chroma" (default): a persistent ChromaDB collection under VECTOR_DIR. It is
-#     built once and survives restarts, so a cold start re-embeds nothing and a
-#     question is an HNSW lookup rather than a cosine scan over every section.
-#   "memory": the original in-process list + linear scan. Touches no files and
-#     is rebuilt on every process start. The test suite runs on this.
-VECTOR_BACKEND = os.environ.get("VECTOR_BACKEND", "chroma")
+#   "memory" (default): an in-process list + linear cosine scan, built from the
+#     embeddings.json seed so it costs no API calls. At this doc size it is the
+#     right call everywhere: ~30 ms per query against 64 sections, versus ~2.4 s
+#     just to import chromadb on a cold start. Scan time is linear — around 500
+#     sections it starts rivalling the query-embedding round-trip, which is the
+#     signal to switch. Watch retrieval_ms in evaluation/results/latency_log.csv.
+#   "chroma": a persistent ChromaDB collection under VECTOR_DIR, with a real
+#     HNSW index. Worth it once the doc set outgrows the scan.
+#     Needs `pip install -r requirements-vector.txt`.
+VECTOR_BACKEND = os.environ.get("VECTOR_BACKEND", "memory")
 
 # On-disk home for the Chroma collection. Sits under LOG_DIR so it inherits the
 # temp-dir fallback on a read-only host (Streamlit Community Cloud) — there the

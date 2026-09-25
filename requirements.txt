@@ -15,11 +15,6 @@ pydantic>=2
 SQLAlchemy>=2.0
 psycopg[binary]>=3.1
 
-# Vector store for RAG retrieval (core/retrieval.py). The doc-section embeddings
-# live in a persistent Chroma collection under logs/chroma/, so a restart
-# re-embeds nothing. VECTOR_BACKEND=memory falls back to an in-process scan.
-chromadb>=1.0
-
 # STT -> SOAP workflow (stt/, pages/)
 pandas>=2.0          # Past Notes / Evaluation tables
 jiwer>=3.0           # WER / CER scoring on the Evaluation page
@@ -29,3 +24,4 @@ reportlab>=4.0       # PDF export of a saved note
 #   fastapi / uvicorn        -> requirements-service.txt   (the old REST backend)
 #   numpy / scikit-learn     -> requirements-analytics.txt (batch failure clustering)
 #   pytest / httpx           -> requirements-dev.txt
+#   chromadb                 -> requirements-vector.txt (VECTOR_BACKEND=chroma)
