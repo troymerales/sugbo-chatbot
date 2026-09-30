@@ -20,6 +20,8 @@ looking bespoke.
 
 from __future__ import annotations
 
+import html
+
 import streamlit as st
 
 # st.container(key="sugbodoc_assistant") renders a wrapper with this class.
@@ -588,6 +590,42 @@ TYPING_HTML = (
     "<span></span><span></span><span></span>"
     "</div>"
 )
+
+
+def lookup_phrases_html(phrases, every: float = 1.5) -> str:
+    """Phrases stacked in place, cycling on a CSS timer.
+
+    CSS and not a Python loop because `st.write_stream` blocks the script for
+    the whole model call — there is no moment during the wait when Streamlit
+    could repaint a placeholder. Each phrase is a span held at opacity 0 until
+    its staggered delay brings it up for `every` seconds.
+    """
+    if not phrases:
+        return ""
+    total = len(phrases) * every
+    share = 100 / len(phrases)
+    spans = "".join(
+        f'<span style="animation-delay:{i * every:g}s">{html.escape(p)}</span>'
+        for i, p in enumerate(phrases)
+    )
+    return (
+        "<style>"
+        f"@keyframes sd-phrase{{0%,{share:g}%{{opacity:.65}}"
+        f"{share + 0.001:g}%,100%{{opacity:0}}}}"
+        # Grid-stack rather than absolute-position: every span sits in the same
+        # cell, so the box is as tall as the longest phrase and each one wraps
+        # inside the bubble instead of running past its edge.
+        ".sd-lookup{display:grid;margin:.1rem 0 .25rem}"
+        ".sd-lookup span{grid-area:1/1;opacity:0;"
+        "font-size:.9rem;line-height:1.35;color:inherit;"
+        "overflow-wrap:anywhere;"
+        f"animation:sd-phrase {total:g}s linear infinite}}"
+        "@media (prefers-reduced-motion: reduce){"
+        ".sd-lookup span{animation:none}"
+        ".sd-lookup span:first-child{opacity:.65}}"
+        "</style>"
+        f'<div class="sd-lookup" role="status" aria-live="polite">{spans}</div>'
+    )
 
 PANEL_HEADER_HTML = (
     '<div class="sd-asst-head">'

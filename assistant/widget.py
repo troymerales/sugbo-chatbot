@@ -21,6 +21,17 @@ from assistant import session, styles
 from assistant.ticket_dialog import ticket_dialog
 from core import jira_client
 
+# Shown under the typing dots while the answer is still being looked up. One is
+# picked at random per question. Edit, add to, or trim this list freely; leave it
+# empty to show only the dots.
+LOOKUP_PHRASES = (
+    "Let me look up my documents…",
+    "Checking the documentation…",
+    "Looking that up…",
+    "Searching the docs for you…",
+    "One moment — finding that…",
+)
+
 _INPUT_STAGES = ("chat", "feedback", "offer_ticket")
 
 # Shown once in a bubble beside the button, then replaced by the unread dot.
@@ -192,8 +203,14 @@ def _panel() -> None:
         # An answer is mid-flight: stream it, verify, then rerun to show controls.
         if ss.get("asst_pending"):
             with st.chat_message("assistant"):
+                # First answer of the chat gets the cycling phrases; every
+                # follow-up gets the dots. The first wait is the long one (cold
+                # index, cold connection) and the one worth narrating.
+                first_answer = ss.get("asst_question_count", 0) <= 1
+                waiting = (styles.lookup_phrases_html(LOOKUP_PHRASES)
+                           if first_answer else "") or styles.TYPING_HTML
                 typing = st.empty()
-                typing.markdown(styles.TYPING_HTML, unsafe_allow_html=True)
+                typing.markdown(waiting, unsafe_allow_html=True)
                 draft = st.write_stream(_typing_then(session.stream_reply(), typing))
             # The grounding pass runs silently: it is an internal check, not a
             # step the person asking a question needs narrated to them.
